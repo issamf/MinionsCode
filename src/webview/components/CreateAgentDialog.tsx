@@ -4,6 +4,7 @@ import { AgentConfig, AgentType, AIProvider } from '@/shared/types';
 interface CreateAgentDialogProps {
   onClose: () => void;
   onCreate: (agentData: Partial<AgentConfig>) => void;
+  onShowGlobalSettings?: (provider?: AIProvider) => void;
 }
 
 const AGENT_TEMPLATES = [
@@ -90,7 +91,7 @@ const AI_PROVIDERS = [
   { value: AIProvider.OLLAMA, label: 'Ollama (Local)', models: ['llama3.1', 'llama2', 'codellama'] }
 ];
 
-export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, onCreate }) => {
+export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, onCreate, onShowGlobalSettings }) => {
   const [selectedTemplate, setSelectedTemplate] = useState(AGENT_TEMPLATES[0]);
   const [formData, setFormData] = useState({
     name: '',
@@ -98,9 +99,9 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
     provider: AIProvider.ANTHROPIC,
     model: 'claude-3-5-sonnet-20241022',
     temperature: 0.7,
-    customPrompt: false,
-    apiKey: ''
+    customPrompt: false
   });
+  const [providerStatus] = useState<{[key: string]: boolean}>({});
 
   const handleTemplateSelect = (template: typeof AGENT_TEMPLATES[0]) => {
     setSelectedTemplate(template);
@@ -112,12 +113,13 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
   };
 
   const handleCreate = () => {
-    // First save the API key if provided
-    if (formData.apiKey && formData.provider !== AIProvider.OLLAMA as AIProvider) {
-      window.postMessage({
-        type: 'saveAPIKey',
-        data: { provider: formData.provider, key: formData.apiKey }
-      }, '*');
+    // Check if provider needs configuration
+    const needsApiKey = formData.provider !== AIProvider.OLLAMA && !providerStatus[formData.provider];
+    
+    if (needsApiKey && onShowGlobalSettings) {
+      // Show global settings for this provider
+      onShowGlobalSettings(formData.provider);
+      return;
     }
 
     const agentData: Partial<AgentConfig> = {
@@ -231,43 +233,15 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
                 </select>
               </div>
 
-              {formData.provider !== AIProvider.OLLAMA as AIProvider && (
+              {formData.provider !== AIProvider.OLLAMA && !providerStatus[formData.provider] && (
                 <div className="form-group">
-                  <label>
-                    API Key 
-                    <span className="required">*</span>
-                    <a
-                      href={formData.provider === AIProvider.ANTHROPIC 
-                        ? 'https://console.anthropic.com/' 
-                        : formData.provider === AIProvider.OPENAI
-                        ? 'https://platform.openai.com/'
-                        : '#'
-                      }
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="api-key-link"
-                      title="Get API Key"
-                    >
-                      🔗 Get Key
-                    </a>
-                  </label>
-                  <input
-                    type="password"
-                    value={formData.apiKey}
-                    onChange={(e) => setFormData(prev => ({ ...prev, apiKey: (e.target as HTMLInputElement).value }))}
-                    placeholder={formData.provider === AIProvider.ANTHROPIC 
-                      ? 'sk-ant-api03-...' 
-                      : formData.provider === AIProvider.OPENAI
-                      ? 'sk-...'
-                      : 'Enter API Key'
-                    }
-                    required={formData.provider !== AIProvider.OLLAMA as AIProvider}
-                  />
-                  {!formData.apiKey && (
-                    <small className="api-key-help">
-                      Required for {AI_PROVIDERS.find(p => p.value === formData.provider)?.label}. This will be stored securely in VSCode settings.
-                    </small>
-                  )}
+                  <div className="api-key-notice">
+                    <div className="notice-icon">⚠️</div>
+                    <div className="notice-content">
+                      <p>API key required for {AI_PROVIDERS.find(p => p.value === formData.provider)?.label}</p>
+                      <p>Click "Create Agent" to configure this provider globally.</p>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -298,9 +272,11 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
           <button 
             className="btn btn-primary" 
             onClick={handleCreate}
-            disabled={formData.provider !== AIProvider.OLLAMA as AIProvider && !formData.apiKey}
           >
-            Create Agent
+            {formData.provider !== AIProvider.OLLAMA && !providerStatus[formData.provider] 
+              ? 'Configure & Create Agent'
+              : 'Create Agent'
+            }
           </button>
         </div>
       </div>

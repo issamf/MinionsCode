@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AgentConfig } from '@/shared/types';
+import { AgentConfig, AIProvider } from '@/shared/types';
 import { AgentWidget } from './components/AgentWidget';
 import { CreateAgentDialog } from './components/CreateAgentDialog';
 import { AgentSettingsDialog } from './components/AgentSettingsDialog';
-import { APIKeyManager } from './components/APIKeyManager';
+import { GlobalSettings } from './components/GlobalSettings';
 
 interface AppState {
   agents: AgentConfig[];
   showCreateDialog: boolean;
   showSettingsDialog: boolean;
-  showAPIKeyManager: boolean;
+  showGlobalSettings: boolean;
   selectedAgentForSettings: string | null;
+  pendingProviderConfig: string | null;
   loading: boolean;
 }
 
@@ -19,8 +20,9 @@ export const App: React.FC = () => {
     agents: [],
     showCreateDialog: false,
     showSettingsDialog: false,
-    showAPIKeyManager: false,
+    showGlobalSettings: false,
     selectedAgentForSettings: null,
+    pendingProviderConfig: null,
     loading: true
   });
 
@@ -135,12 +137,20 @@ export const App: React.FC = () => {
     setState(prev => ({ ...prev, showCreateDialog: false }));
   };
 
-  const showAPIKeyManager = () => {
-    setState(prev => ({ ...prev, showAPIKeyManager: true }));
+  const showGlobalSettings = (providerToConfig?: string) => {
+    setState(prev => ({ 
+      ...prev, 
+      showGlobalSettings: true,
+      pendingProviderConfig: providerToConfig || null
+    }));
   };
 
-  const hideAPIKeyManager = () => {
-    setState(prev => ({ ...prev, showAPIKeyManager: false }));
+  const hideGlobalSettings = () => {
+    setState(prev => ({ 
+      ...prev, 
+      showGlobalSettings: false,
+      pendingProviderConfig: null
+    }));
   };
 
   if (state.loading) {
@@ -162,8 +172,8 @@ export const App: React.FC = () => {
           <button className="btn btn-primary" onClick={showCreateDialog}>
             + Create Agent
           </button>
-          <button className="btn btn-secondary" onClick={showAPIKeyManager}>
-            🔑 API Keys
+          <button className="btn btn-secondary" onClick={() => showGlobalSettings()}>
+            ⚙️ Settings
           </button>
           <button className="btn btn-secondary" onClick={() => window.location.reload()}>
             Refresh
@@ -207,6 +217,7 @@ export const App: React.FC = () => {
         <CreateAgentDialog
           onClose={hideCreateDialog}
           onCreate={handleCreateAgent}
+          onShowGlobalSettings={showGlobalSettings}
         />
       )}
 
@@ -219,10 +230,11 @@ export const App: React.FC = () => {
         />
       )}
 
-      {state.showAPIKeyManager && (
-        <APIKeyManager
-          isOpen={state.showAPIKeyManager}
-          onClose={hideAPIKeyManager}
+      {state.showGlobalSettings && (
+        <GlobalSettings
+          isOpen={state.showGlobalSettings}
+          onClose={hideGlobalSettings}
+          initialProvider={state.pendingProviderConfig as AIProvider}
         />
       )}
     </div>
