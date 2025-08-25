@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AgentConfig } from '@/shared/types';
+import { webviewLogger } from '../utils/webviewLogger';
 
 interface Message {
   id: string;
@@ -46,6 +47,7 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
   const widgetRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const [savedScrollPosition, setSavedScrollPosition] = useState<number | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Size constraints
   const MIN_WIDTH = 300;
@@ -440,7 +442,7 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
       >
         <div className="compact-content" onMouseDown={handleMouseDown}>
           <div className="compact-avatar">
-            {agent.avatar.startsWith('vscode-resource://') || agent.avatar.startsWith('vscode-webview://') ? (
+            {agent.avatar.includes('vscode-resource') || agent.avatar.includes('vscode-webview') || agent.avatar.startsWith('https://file') ? (
               <img src={agent.avatar} alt="Agent Avatar" className="avatar-image" />
             ) : (
               <span className="avatar-emoji">{agent.avatar}</span>
@@ -481,7 +483,7 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
     >
       <div className="agent-header" onMouseDown={handleMouseDown}>
         <div className="agent-avatar">
-          {agent.avatar.startsWith('vscode-resource://') || agent.avatar.startsWith('vscode-webview://') ? (
+          {agent.avatar.includes('vscode-resource') || agent.avatar.includes('vscode-webview') || agent.avatar.startsWith('https://file') ? (
             <img src={agent.avatar} alt="Agent Avatar" className="avatar-image" />
           ) : (
             <span className="avatar-emoji">{agent.avatar}</span>
@@ -498,29 +500,50 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
             <button
               className="control-btn"
               title={isMinimized ? "Maximize" : "Minimize"}
-              onClick={toggleMinimize}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleMinimize();
+              }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
             >
               {isMinimized ? '□' : '—'}
             </button>
           </div>
           <button
             className="icon-btn"
-            title="Agent Settings"
-            onClick={() => onShowSettings?.(agent.id)}
-          >
-            ⚙️
-          </button>
-          <button
-            className="icon-btn"
             title="Delete Agent"
-            onClick={() => {
-              if (window.confirm(`Are you sure you want to delete ${agent.name}?\n\nThis action cannot be undone.`)) {
-                console.log('Destroying agent:', agent.id);
-                onDestroy(agent.id);
-              }
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              webviewLogger.log('Delete button clicked', { agentId: agent.id, agentName: agent.name });
+              setShowDeleteConfirm(true);
+            }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              webviewLogger.log('DELETE BUTTON - MOUSEDOWN EVENT');
             }}
           >
             🗑️
+          </button>
+          <button
+            className="icon-btn"
+            title="Agent Settings"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onShowSettings?.(agent.id);
+            }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            ⚙️
           </button>
         </div>
       </div>
@@ -590,7 +613,7 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
           {messages.length === 0 ? (
             <div className="empty-state">
               <div style={{ fontSize: '24px', marginBottom: '8px' }}>
-                {agent.avatar.startsWith('vscode-resource://') || agent.avatar.startsWith('vscode-webview://') ? (
+                {agent.avatar.includes('vscode-resource') || agent.avatar.includes('vscode-webview') || agent.avatar.startsWith('https://file') ? (
                   <img src={agent.avatar} alt="Agent Avatar" className="avatar-image" style={{ width: '24px', height: '24px' }} />
                 ) : (
                   <span className="avatar-emoji">{agent.avatar}</span>
@@ -663,6 +686,36 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
           onMouseDown={(e) => handleResizeStart(e, 'nw')}
         />
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && (
+        <div className="dialog-overlay">
+          <div className="dialog-content">
+            <h3>Delete Agent</h3>
+            <p>Are you sure you want to delete <strong>{agent.name}</strong>?</p>
+            <p>This action cannot be undone.</p>
+            <div className="dialog-actions">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowDeleteConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  webviewLogger.log('Delete confirmed', { agentId: agent.id });
+                  onDestroy(agent.id);
+                  setShowDeleteConfirm(false);
+                }}
+                style={{ backgroundColor: 'var(--vscode-errorForeground)' }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

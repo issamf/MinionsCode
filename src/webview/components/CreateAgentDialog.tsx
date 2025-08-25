@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AgentConfig, AgentType, AIProvider } from '@/shared/types';
+import { webviewLogger } from '../utils/webviewLogger';
 
 interface CreateAgentDialogProps {
   onClose: () => void;
@@ -181,14 +182,18 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
   };
 
   const handleCreate = () => {
+    webviewLogger.log('CreateAgentDialog.handleCreate called');
+    webviewLogger.log('Current formData', formData);
+    webviewLogger.log('Selected template', selectedTemplate);
+    
     // Validate that we have a model selected
     if (!formData.model) {
-      console.error('No model selected');
+      webviewLogger.log('ERROR: No model selected');
       alert('Please select a model for your agent.');
       return;
     }
 
-    console.log('Creating agent with data:', formData);
+    webviewLogger.log('Creating agent with validated data', formData);
 
     const agentData: Partial<AgentConfig> = {
       name: formData.name || selectedTemplate.name,
@@ -226,8 +231,9 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
       return;
     }
 
-    console.log('Calling onCreate with agentData:', agentData);
+    webviewLogger.log('About to call onCreate callback', agentData);
     onCreate(agentData);
+    webviewLogger.log('onCreate callback called successfully');
   };
 
   const getModelsForProvider = (provider: AIProvider): string[] => {
@@ -373,7 +379,13 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
           </button>
           <button 
             className="btn btn-primary" 
-            onClick={handleCreate}
+            onClick={(e) => {
+              console.log('Create button clicked!', e);
+              e.preventDefault();
+              e.stopPropagation();
+              handleCreate();
+            }}
+            type="button"
           >
             {formData.provider !== AIProvider.OLLAMA && !providerStatus[formData.provider] 
               ? 'Configure & Create Agent'

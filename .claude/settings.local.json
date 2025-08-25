@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(/C:\\Users\\issam\\AppData\\Local\\Temp/**)"
+    ],
+    "deny": [],
+    "ask": [],
+    "additionalDirectories": [
+      "C:\\Users\\issam\\AppData\\Local\\Temp"
+    ]
+  }
+}

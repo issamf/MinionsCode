@@ -4,6 +4,47 @@
   box-sizing: border-box;
 }
 
+/* Error Banner */
+.error-banner {
+  background-color: var(--vscode-inputValidation-errorBackground);
+  border: 1px solid var(--vscode-inputValidation-errorBorder);
+  border-left: 4px solid var(--vscode-errorForeground);
+  margin: 0;
+  padding: 0;
+}
+
+.error-content {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  gap: 8px;
+}
+
+.error-icon {
+  font-size: 14px;
+  color: var(--vscode-errorForeground);
+}
+
+.error-text {
+  flex: 1;
+  font-size: 12px;
+  color: var(--vscode-errorForeground);
+}
+
+.error-dismiss {
+  background: none;
+  border: none;
+  color: var(--vscode-errorForeground);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 2px;
+  font-size: 12px;
+}
+
+.error-dismiss:hover {
+  background-color: var(--vscode-toolbar-hoverBackground);
+}
+
 body {
   margin: 0;
   padding: 0;
@@ -1091,6 +1132,13 @@ body {
 
 .dialog-content {
   padding: 16px;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 
 .dialog-footer {

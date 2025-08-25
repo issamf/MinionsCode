@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { AgentConfig, AgentType, AIProvider, AgentEvent, AgentEventType } from '@/shared/types';
 import { SettingsManager } from './SettingsManager';
 import { AvatarService } from '../services/AvatarService';
+import { debugLogger } from '@/utils/logger';
 
 export class AgentManager {
   private context: vscode.ExtensionContext;
@@ -22,54 +23,108 @@ export class AgentManager {
   }
 
   public async createAgent(config: Partial<AgentConfig>): Promise<AgentConfig> {
-    const agentId = uuidv4();
-    const now = new Date();
-    
-    const defaultConfig: AgentConfig = {
-      id: agentId,
-      name: config.name || `Agent ${this.agents.size + 1}`,
-      avatar: config.avatar || this.avatarService.allocateAvatar(agentId),
-      type: config.type || AgentType.CUSTOM,
-      model: config.model || {
-        provider: this.settingsManager.getDefaultProvider(),
-        modelName: this.getDefaultModelName(this.settingsManager.getDefaultProvider()),
-        temperature: 0.7,
-        maxTokens: 2000
-      },
-      capabilities: config.capabilities || [],
-      permissions: config.permissions || [],
-      systemPrompt: config.systemPrompt || this.getDefaultSystemPrompt(config.type || AgentType.CUSTOM),
-      contextScope: config.contextScope || {
-        includeFiles: true,
-        includeGit: true,
-        includeWorkspace: true,
-        filePatterns: ['**/*.ts', '**/*.js', '**/*.py', '**/*.md'],
-        excludePatterns: ['**/node_modules/**', '**/dist/**']
-      },
-      memory: config.memory || {
-        maxConversations: 100,
-        retentionDays: this.settingsManager.getSettings().dataRetentionDays,
-        enableLearning: true
-      },
-      createdAt: now,
-      updatedAt: now,
-      isActive: true
-    };
+    try {
+      debugLogger.log('AgentManager.createAgent starting', config);
+      const agentId = uuidv4();
+      const now = new Date();
+      
+      debugLogger.log('Generated agent ID and timestamp', { agentId, now });
 
-    // Check if we're at the max concurrent agents limit
-    const activeAgents = Array.from(this.agents.values()).filter(a => a.isActive);
-    const maxAgents = this.settingsManager.getMaxConcurrentAgents();
-    
-    if (activeAgents.length >= maxAgents) {
-      throw new Error(`Maximum number of concurrent agents (${maxAgents}) reached`);
+      // Get settings with error handling
+      let defaultProvider: AIProvider;
+      let dataRetentionDays: number;
+      let maxAgents: number;
+
+      try {
+        defaultProvider = this.settingsManager.getDefaultProvider();
+        debugLogger.log('Got default provider', defaultProvider);
+      } catch (error) {
+        debugLogger.log('Error getting default provider, using ANTHROPIC', error);
+        defaultProvider = AIProvider.ANTHROPIC;
+      }
+
+      try {
+        const settings = this.settingsManager.getSettings();
+        dataRetentionDays = settings.dataRetentionDays;
+        debugLogger.log('Got settings dataRetentionDays', dataRetentionDays);
+      } catch (error) {
+        debugLogger.log('Error getting settings, using default 30 days', error);
+        dataRetentionDays = 30;
+      }
+
+      try {
+        maxAgents = this.settingsManager.getMaxConcurrentAgents();
+        debugLogger.log('Got max agents limit', maxAgents);
+      } catch (error) {
+        debugLogger.log('Error getting max agents, using default 5', error);
+        maxAgents = 5;
+      }
+
+      // Allocate avatar with error handling
+      let avatarValue: string;
+      try {
+        avatarValue = config.avatar || this.avatarService.allocateAvatar(agentId);
+        debugLogger.log('Allocated avatar', avatarValue);
+      } catch (error) {
+        debugLogger.log('Error allocating avatar, using default', error);
+        avatarValue = '🤖';
+      }
+
+      const defaultConfig: AgentConfig = {
+        id: agentId,
+        name: config.name || `Agent ${this.agents.size + 1}`,
+        avatar: avatarValue,
+        type: config.type || AgentType.CUSTOM,
+        model: config.model || {
+          provider: defaultProvider,
+          modelName: this.getDefaultModelName(defaultProvider),
+          temperature: 0.7,
+          maxTokens: 2000
+        },
+        capabilities: config.capabilities || [],
+        permissions: config.permissions || [],
+        systemPrompt: config.systemPrompt || this.getDefaultSystemPrompt(config.type || AgentType.CUSTOM),
+        contextScope: config.contextScope || {
+          includeFiles: true,
+          includeGit: true,
+          includeWorkspace: true,
+          filePatterns: ['**/*.ts', '**/*.js', '**/*.py', '**/*.md'],
+          excludePatterns: ['**/node_modules/**', '**/dist/**']
+        },
+        memory: config.memory || {
+          maxConversations: 100,
+          retentionDays: dataRetentionDays,
+          enableLearning: true
+        },
+        createdAt: now,
+        updatedAt: now,
+        isActive: true
+      };
+
+      debugLogger.log('Created default config', defaultConfig);
+
+      // Check if we're at the max concurrent agents limit
+      const activeAgents = Array.from(this.agents.values()).filter(a => a.isActive);
+      
+      if (activeAgents.length >= maxAgents) {
+        const error = `Maximum number of concurrent agents (${maxAgents}) reached`;
+        debugLogger.log('Agent creation failed - max agents reached', { activeAgents: activeAgents.length, maxAgents });
+        throw new Error(error);
+      }
+
+      debugLogger.log('Adding agent to map and persisting');
+      this.agents.set(agentId, defaultConfig);
+      await this.persistAgents();
+
+      debugLogger.log('Emitting CREATED event');
+      this.emitEvent(AgentEventType.CREATED, agentId);
+      
+      debugLogger.log('Agent created successfully', defaultConfig);
+      return defaultConfig;
+    } catch (error) {
+      debugLogger.log('AgentManager.createAgent failed with error', error);
+      throw error;
     }
-
-    this.agents.set(agentId, defaultConfig);
-    await this.persistAgents();
-
-    this.emitEvent(AgentEventType.CREATED, agentId);
-    
-    return defaultConfig;
   }
 
   public async destroyAgent(agentId: string): Promise<void> {
@@ -143,9 +198,23 @@ export class AgentManager {
       
       for (const agent of persistedAgents) {
         this.agents.set(agent.id, agent);
+        
+        // Mark avatar as in use if it's a file-based avatar
+        if (agent.avatar && agent.avatar.startsWith('avatar:')) {
+          try {
+            // Simulate allocation to mark the avatar as in use
+            this.avatarService.allocateAvatar(agent.id);
+            debugLogger.log('Marked persisted agent avatar as in use', { agentId: agent.id, avatar: agent.avatar });
+          } catch (error) {
+            debugLogger.log('Failed to mark persisted agent avatar as in use', { agentId: agent.id, avatar: agent.avatar, error });
+          }
+        }
       }
+      
+      debugLogger.log('Loaded persisted agents', { count: persistedAgents.length });
     } catch (error) {
       console.error('Error loading persisted agents:', error);
+      debugLogger.log('Error loading persisted agents', error);
     }
   }
 

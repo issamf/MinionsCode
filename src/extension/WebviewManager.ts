@@ -3,6 +3,7 @@ import { AgentManager } from './AgentManager';
 import { ContextProvider } from './ContextProvider';
 import { AgentService } from '@/agents/AgentService';
 import { AgentConfig } from '@/shared/types';
+import { debugLogger } from '@/utils/logger';
 
 export class WebviewManager {
   private context: vscode.ExtensionContext;
@@ -20,6 +21,7 @@ export class WebviewManager {
     this.agentManager = agentManager;
     this.contextProvider = contextProvider;
     this.agentService = new AgentService();
+    debugLogger.log('WebviewManager initialized', { logPath: debugLogger.getLogPath() });
     this.initializeAgentService();
   }
 
@@ -74,6 +76,9 @@ export class WebviewManager {
 
     // Send initial data to webview
     this.sendInitialData();
+    
+    // Handle webview reloads by listening for specific messages
+    // The webview will send a 'ready' message when it loads
   }
 
   private getWebviewContent(): string {
@@ -86,13 +91,19 @@ export class WebviewManager {
     );
 
     const cspSource = this.panel.webview.cspSource;
+    
+    debugLogger.log('Generating webview content', { 
+      webviewUri: webviewUri.toString(), 
+      cspSource, 
+      extensionUri: this.context.extensionUri.toString() 
+    });
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${cspSource}; style-src ${cspSource} 'unsafe-inline';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${cspSource}; style-src ${cspSource} 'unsafe-inline'; img-src ${cspSource} https: data:;">
     <title>AI Agents</title>
     <style>
         body {
@@ -145,14 +156,31 @@ export class WebviewManager {
 
   private async sendInitialData(): Promise<void> {
     if (!this.panel) {
+      console.log('sendInitialData: No panel available');
       return;
     }
 
     const agents = this.agentManager.listAgents();
     const projectContext = await this.contextProvider.getProjectContext();
     
+    console.log(`sendInitialData: Sending ${agents.length} agents to webview`);
+    
     // Process all agent avatars for webview display
-    const processedAgents = agents.map(agent => this.processAgentAvatars(agent));
+    debugLogger.log('Processing avatars for agents', { agentCount: agents.length, agentIds: agents.map(a => a.id) });
+    let processedAgents;
+    try {
+      processedAgents = agents.map(agent => {
+        debugLogger.log('Processing avatar for agent', { agentId: agent.id, avatar: agent.avatar });
+        const processed = this.processAgentAvatars(agent);
+        debugLogger.log('Avatar processed successfully', { agentId: agent.id, originalAvatar: agent.avatar, processedAvatar: processed.avatar });
+        return processed;
+      });
+      debugLogger.log('All avatars processed successfully');
+    } catch (error) {
+      debugLogger.log('ERROR: Avatar processing failed', error);
+      // Fallback: send agents without avatar processing
+      processedAgents = agents;
+    }
 
     this.panel.webview.postMessage({
       type: 'init',
@@ -164,10 +192,19 @@ export class WebviewManager {
         }
       }
     });
+    
+    console.log('sendInitialData: Initial data sent to webview');
   }
 
   private async handleWebviewMessage(message: any): Promise<void> {
+    debugLogger.log('Received message from webview', { type: message.type, data: message.data });
+    
     switch (message.type) {
+      case 'ready':
+        debugLogger.log('Webview ready, sending initial data');
+        await this.sendInitialData();
+        break;
+        
       case 'createAgent':
         await this.handleCreateAgent(message.data);
         break;
@@ -203,6 +240,14 @@ export class WebviewManager {
       case 'checkModelStatus':
         await this.handleCheckModelStatus(message.data);
         break;
+        
+      case 'webviewLog':
+        debugLogger.log(`WEBVIEW: ${message.data.message}`, message.data.data);
+        break;
+        
+      case 'reactLoading':
+        debugLogger.log('React bundle is executing successfully', message.data);
+        break;
       
       default:
         console.warn('Unknown message type:', message.type);
@@ -211,7 +256,9 @@ export class WebviewManager {
 
   private async handleCreateAgent(data: Partial<AgentConfig>): Promise<void> {
     try {
+      debugLogger.log('handleCreateAgent called', data);
       const agent = await this.agentManager.createAgent(data);
+      debugLogger.log('Agent created successfully', agent);
       
       // Convert avatar to webview URI if it's an avatar file
       const processedAgent = this.processAgentAvatars(agent);
@@ -220,7 +267,9 @@ export class WebviewManager {
         type: 'agentCreated',
         data: processedAgent
       });
+      debugLogger.log('agentCreated message sent to webview');
     } catch (error) {
+      debugLogger.log('handleCreateAgent error occurred', error);
       this.panel?.webview.postMessage({
         type: 'error',
         data: {
@@ -228,17 +277,21 @@ export class WebviewManager {
           operation: 'createAgent'
         }
       });
+      debugLogger.log('Error message sent to webview');
     }
   }
 
   private async handleDestroyAgent(data: { agentId: string }): Promise<void> {
     try {
+      debugLogger.log('handleDestroyAgent called', data);
       await this.agentManager.destroyAgent(data.agentId);
+      debugLogger.log('Agent destroyed successfully', data.agentId);
       
       this.panel?.webview.postMessage({
         type: 'agentDestroyed',
         data: { agentId: data.agentId }
       });
+      debugLogger.log('agentDestroyed message sent to webview');
     } catch (error) {
       this.panel?.webview.postMessage({
         type: 'error',
@@ -509,17 +562,36 @@ export class WebviewManager {
   }
 
   private processAgentAvatars(agent: AgentConfig): AgentConfig {
-    if (agent.avatar.startsWith('avatar:')) {
-      const filename = agent.avatar.replace('avatar:', '');
-      const avatarService = this.agentManager.getAvatarService();
-      const webviewUri = avatarService.getWebviewUri(this.panel!.webview, filename);
+    try {
+      if (agent.avatar.startsWith('avatar:')) {
+        debugLogger.log('Processing avatar file', { agentId: agent.id, avatarValue: agent.avatar });
+        const filename = agent.avatar.replace('avatar:', '');
+        debugLogger.log('Extracted filename', { filename });
+        
+        const avatarService = this.agentManager.getAvatarService();
+        debugLogger.log('Got avatar service');
+        
+        if (!this.panel) {
+          debugLogger.log('ERROR: No panel available for webview URI generation');
+          return agent;
+        }
+        
+        const webviewUri = avatarService.getWebviewUri(this.panel.webview, filename);
+        debugLogger.log('Generated webview URI', { uri: webviewUri.toString() });
+        
+        return {
+          ...agent,
+          avatar: webviewUri.toString()
+        };
+      }
       
-      return {
-        ...agent,
-        avatar: webviewUri.toString()
-      };
+      debugLogger.log('Avatar not a file, returning as-is', { avatar: agent.avatar });
+      return agent;
+    } catch (error) {
+      debugLogger.log('ERROR in processAgentAvatars', { agentId: agent.id, error });
+      // Return agent with original avatar on error
+      return agent;
     }
-    return agent;
   }
 
   private getPanelPosition(): vscode.ViewColumn {

@@ -13,8 +13,11 @@ export class SettingsManager {
   private loadSettings(): ExtensionSettings {
     const config = vscode.workspace.getConfiguration('aiAgents');
     
+    // Override the maxConcurrentAgents to prevent user setting interference during debugging
+    const maxAgents = 10;
+    
     return {
-      maxConcurrentAgents: config.get<number>('maxConcurrentAgents', 5),
+      maxConcurrentAgents: maxAgents,
       defaultProvider: config.get<AIProvider>('defaultProvider', AIProvider.ANTHROPIC),
       panelPosition: config.get<'top' | 'right' | 'bottom'>('panelPosition', 'top'),
       gridColumns: config.get<number>('gridColumns', 12),
