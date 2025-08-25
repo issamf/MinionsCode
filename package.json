@@ -1,0 +1,169 @@
+{
+  "name": "vscode-ai-agents",
+  "displayName": "AI Agents",
+  "description": "Dynamic multi-agent AI workspace for VSCode",
+  "version": "0.1.0",
+  "publisher": "companai",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "agents",
+    "assistant",
+    "claude",
+    "openai",
+    "productivity"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension/main.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiAgents.showPanel",
+        "title": "Show AI Agents Panel",
+        "category": "AI Agents"
+      },
+      {
+        "command": "aiAgents.createAgent",
+        "title": "Create New Agent",
+        "category": "AI Agents"
+      },
+      {
+        "command": "aiAgents.quickChat",
+        "title": "Quick Chat with Agent",
+        "category": "AI Agents"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "aiAgents.quickChat",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a",
+        "when": "editorTextFocus"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "aiAgents.sendToAgent",
+          "group": "aiAgents"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "aiAgents.sendSelectionToAgent",
+          "group": "aiAgents",
+          "when": "editorHasSelection"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AI Agents",
+      "properties": {
+        "aiAgents.maxConcurrentAgents": {
+          "type": "number",
+          "default": 5,
+          "description": "Maximum number of concurrent agents"
+        },
+        "aiAgents.defaultProvider": {
+          "type": "string",
+          "enum": [
+            "anthropic",
+            "openai",
+            "google",
+            "ollama"
+          ],
+          "default": "anthropic",
+          "description": "Default AI provider"
+        },
+        "aiAgents.panelPosition": {
+          "type": "string",
+          "enum": [
+            "top",
+            "right",
+            "bottom"
+          ],
+          "default": "top",
+          "description": "Position of the agents panel"
+        },
+        "aiAgents.enableAnimations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable UI animations"
+        },
+        "aiAgents.responseTimeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "description": "Response timeout in milliseconds"
+        },
+        "aiAgents.dataRetentionDays": {
+          "type": "number",
+          "default": 30,
+          "description": "Data retention period in days (0 = no retention)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "webpack --mode production",
+    "dev": "webpack --mode development --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src --ext ts,tsx",
+    "lint:fix": "eslint src --ext ts,tsx --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "typecheck": "tsc --noEmit",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^18.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/uuid": "^10.0.0",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "@vscode/test-electron": "^2.3.0",
+    "css-loader": "^6.8.0",
+    "eslint": "^8.45.0",
+    "eslint-plugin-react": "^7.33.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "jest": "^29.6.0",
+    "prettier": "^3.0.0",
+    "style-loader": "^3.3.0",
+    "ts-jest": "^29.1.0",
+    "ts-loader": "^9.4.0",
+    "typescript": "^5.1.0",
+    "vsce": "^2.15.0",
+    "webpack": "^5.88.0",
+    "webpack-cli": "^5.1.0"
+  },
+  "dependencies": {
+    "axios": "^1.4.0",
+    "dotenv": "^16.3.0",
+    "immer": "^10.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "sqlite3": "^5.1.0",
+    "uuid": "^9.0.0",
+    "zustand": "^4.4.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/companai/vscode-ai-agents.git"
+  },
+  "bugs": {
+    "url": "https://github.com/companai/vscode-ai-agents/issues"
+  },
+  "homepage": "https://github.com/companai/vscode-ai-agents#readme",
+  "license": "MIT"
+}
