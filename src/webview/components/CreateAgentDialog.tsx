@@ -138,11 +138,11 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
           }));
         }
 
-        // Auto-select first available model if no model is currently selected
+        // Auto-select first available model if no model is currently selected or if provider changed
         if (message.data.models.length > 0 && message.data.provider === formData.provider.toLowerCase()) {
           setFormData(prev => ({
             ...prev,
-            model: prev.model || message.data.models[0]
+            model: (!prev.model || prev.model === '') ? message.data.models[0] : prev.model
           }));
         }
       }
@@ -181,6 +181,15 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
   };
 
   const handleCreate = () => {
+    // Validate that we have a model selected
+    if (!formData.model) {
+      console.error('No model selected');
+      alert('Please select a model for your agent.');
+      return;
+    }
+
+    console.log('Creating agent with data:', formData);
+
     const agentData: Partial<AgentConfig> = {
       name: formData.name || selectedTemplate.name,
       // avatar: formData.avatar, // Let the avatar service assign from files
@@ -217,6 +226,7 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
       return;
     }
 
+    console.log('Calling onCreate with agentData:', agentData);
     onCreate(agentData);
   };
 
@@ -286,10 +296,11 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
                   value={formData.provider}
                   onChange={(e) => {
                     const newProvider = (e.target as HTMLSelectElement).value as AIProvider;
+                    const fallbackModels = getModelsForProvider(newProvider);
                     setFormData(prev => ({
                       ...prev,
                       provider: newProvider,
-                      model: '' // Reset model when provider changes
+                      model: fallbackModels.length > 0 ? fallbackModels[0] : '' // Set fallback model or reset
                     }));
                   }}
                 >

@@ -514,7 +514,8 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
             className="icon-btn"
             title="Delete Agent"
             onClick={() => {
-              if (window.confirm(`Are you sure you want to delete ${agent.name}?`)) {
+              if (window.confirm(`Are you sure you want to delete ${agent.name}?\n\nThis action cannot be undone.`)) {
+                console.log('Destroying agent:', agent.id);
                 onDestroy(agent.id);
               }
             }}

@@ -95,6 +95,7 @@ export const App: React.FC = () => {
   }, [vscode]);
 
   const handleDestroyAgent = useCallback((agentId: string) => {
+    console.log('Sending destroyAgent message for:', agentId);
     vscode.postMessage({
       type: 'destroyAgent',
       data: { agentId }
