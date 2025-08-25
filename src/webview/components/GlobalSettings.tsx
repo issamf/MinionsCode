@@ -5,6 +5,7 @@ interface GlobalSettingsProps {
   isOpen: boolean;
   onClose: () => void;
   initialProvider?: AIProvider;
+  onProviderConfigured?: (provider: AIProvider) => void;
 }
 
 interface APIKeyStatus {
@@ -16,7 +17,8 @@ interface APIKeyStatus {
 export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ 
   isOpen, 
   onClose, 
-  initialProvider 
+  initialProvider,
+  onProviderConfigured
 }) => {
   const [activeTab, setActiveTab] = useState<'providers' | 'general'>('providers');
   const [apiKeyStatus, setApiKeyStatus] = useState<APIKeyStatus>({
@@ -67,6 +69,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({
       }));
       
       setTempKeys(prev => ({ ...prev, [provider]: '' }));
+      
+      // Notify that provider was configured
+      if (onProviderConfigured) {
+        onProviderConfigured(provider);
+      }
       
     } catch (error) {
       console.error('Failed to save API key:', error);

@@ -12,6 +12,7 @@ interface AppState {
   showGlobalSettings: boolean;
   selectedAgentForSettings: string | null;
   pendingProviderConfig: string | null;
+  pendingAgentCreation: Partial<AgentConfig> | null;
   loading: boolean;
 }
 
@@ -23,6 +24,7 @@ export const App: React.FC = () => {
     showGlobalSettings: false,
     selectedAgentForSettings: null,
     pendingProviderConfig: null,
+    pendingAgentCreation: null,
     loading: true
   });
 
@@ -137,11 +139,12 @@ export const App: React.FC = () => {
     setState(prev => ({ ...prev, showCreateDialog: false }));
   };
 
-  const showGlobalSettings = (providerToConfig?: string) => {
+  const showGlobalSettings = (providerToConfig?: AIProvider, agentData?: Partial<AgentConfig>) => {
     setState(prev => ({ 
       ...prev, 
       showGlobalSettings: true,
-      pendingProviderConfig: providerToConfig || null
+      pendingProviderConfig: providerToConfig || null,
+      pendingAgentCreation: agentData || null
     }));
   };
 
@@ -152,6 +155,19 @@ export const App: React.FC = () => {
       pendingProviderConfig: null
     }));
   };
+
+  const handleProviderConfigured = useCallback((_provider: AIProvider) => {
+    // If we have a pending agent creation, complete it now
+    if (state.pendingAgentCreation) {
+      handleCreateAgent(state.pendingAgentCreation);
+      setState(prev => ({ 
+        ...prev, 
+        showGlobalSettings: false,
+        pendingProviderConfig: null,
+        pendingAgentCreation: null
+      }));
+    }
+  }, [state.pendingAgentCreation]);
 
   if (state.loading) {
     return (
@@ -235,6 +251,7 @@ export const App: React.FC = () => {
           isOpen={state.showGlobalSettings}
           onClose={hideGlobalSettings}
           initialProvider={state.pendingProviderConfig as AIProvider}
+          onProviderConfigured={handleProviderConfigured}
         />
       )}
     </div>

@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AgentConfig, AgentType, AIProvider } from '@/shared/types';
 
 interface CreateAgentDialogProps {
   onClose: () => void;
   onCreate: (agentData: Partial<AgentConfig>) => void;
-  onShowGlobalSettings?: (provider?: AIProvider) => void;
+  onShowGlobalSettings?: (provider: AIProvider, agentData: Partial<AgentConfig>) => void;
 }
 
 const AGENT_TEMPLATES = [
@@ -101,7 +101,32 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
     temperature: 0.7,
     customPrompt: false
   });
-  const [providerStatus] = useState<{[key: string]: boolean}>({});
+  const [providerStatus, setProviderStatus] = useState<{[key: string]: boolean}>({});
+
+  useEffect(() => {
+    // Load provider status when dialog opens
+    const loadProviderStatus = () => {
+      window.postMessage({ type: 'getAPIKeyStatus' }, '*');
+    };
+
+    const messageHandler = (event: MessageEvent) => {
+      const message = event.data;
+      if (message.type === 'apiKeyStatus') {
+        const status: {[key: string]: boolean} = {};
+        Object.keys(message.data).forEach(provider => {
+          status[provider] = message.data[provider].configured && message.data[provider].valid;
+        });
+        setProviderStatus(status);
+      }
+    };
+
+    loadProviderStatus();
+    window.addEventListener('message', messageHandler);
+    
+    return () => {
+      window.removeEventListener('message', messageHandler);
+    };
+  }, []);
 
   const handleTemplateSelect = (template: typeof AGENT_TEMPLATES[0]) => {
     setSelectedTemplate(template);
@@ -113,15 +138,6 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
   };
 
   const handleCreate = () => {
-    // Check if provider needs configuration
-    const needsApiKey = formData.provider !== AIProvider.OLLAMA && !providerStatus[formData.provider];
-    
-    if (needsApiKey && onShowGlobalSettings) {
-      // Show global settings for this provider
-      onShowGlobalSettings(formData.provider);
-      return;
-    }
-
     const agentData: Partial<AgentConfig> = {
       name: formData.name || selectedTemplate.name,
       avatar: formData.avatar,
@@ -148,6 +164,15 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
         enableLearning: true
       }
     };
+
+    // Check if provider needs configuration
+    const needsApiKey = formData.provider !== AIProvider.OLLAMA && !providerStatus[formData.provider];
+    
+    if (needsApiKey && onShowGlobalSettings) {
+      // Show global settings for this provider with the agent data
+      onShowGlobalSettings(formData.provider, agentData);
+      return;
+    }
 
     onCreate(agentData);
   };
