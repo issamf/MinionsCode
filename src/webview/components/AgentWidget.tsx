@@ -38,8 +38,18 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [position, setPosition] = useState(initialPosition || { x: 0, y: 0 });
   const [agentStatus, setAgentStatus] = useState<'idle' | 'thinking' | 'typing' | 'responding'>('idle');
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizeHandle, setResizeHandle] = useState<'se' | 'sw' | 'ne' | 'nw' | null>(null);
+  const [size, setSize] = useState({ width: 400, height: 500 });
+  const [resizeStart, setResizeStart] = useState({ mouseX: 0, mouseY: 0, width: 0, height: 0 });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<HTMLDivElement>(null);
+
+  // Size constraints
+  const MIN_WIDTH = 300;
+  const MIN_HEIGHT = 250;
+  const MAX_WIDTH = 800;
+  const MAX_HEIGHT = 1000;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -235,6 +245,84 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
     return undefined;
   }, [isDragging, dragOffset]);
 
+  // Resize handlers
+  const handleResizeStart = (e: React.MouseEvent, handle: 'se' | 'sw' | 'ne' | 'nw') => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    setIsResizing(true);
+    setResizeHandle(handle);
+    setResizeStart({
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      width: size.width,
+      height: size.height
+    });
+  };
+
+  const handleResizeMove = (e: MouseEvent) => {
+    if (!isResizing || !resizeHandle) return;
+    
+    const deltaX = e.clientX - resizeStart.mouseX;
+    const deltaY = e.clientY - resizeStart.mouseY;
+    
+    let newWidth = resizeStart.width;
+    let newHeight = resizeStart.height;
+    
+    // Calculate new size based on resize handle
+    switch (resizeHandle) {
+      case 'se': // South-East
+        newWidth += deltaX;
+        newHeight += deltaY;
+        break;
+      case 'sw': // South-West
+        newWidth -= deltaX;
+        newHeight += deltaY;
+        break;
+      case 'ne': // North-East
+        newWidth += deltaX;
+        newHeight -= deltaY;
+        break;
+      case 'nw': // North-West
+        newWidth -= deltaX;
+        newHeight -= deltaY;
+        break;
+    }
+    
+    // Apply constraints
+    newWidth = Math.max(MIN_WIDTH, Math.min(newWidth, MAX_WIDTH));
+    newHeight = Math.max(MIN_HEIGHT, Math.min(newHeight, MAX_HEIGHT));
+    
+    setSize({ width: newWidth, height: newHeight });
+    
+    // Update position for north/west handles
+    if (resizeHandle.includes('n')) {
+      const heightChange = newHeight - size.height;
+      setPosition(prev => ({ ...prev, y: prev.y - heightChange }));
+    }
+    if (resizeHandle.includes('w')) {
+      const widthChange = newWidth - size.width;
+      setPosition(prev => ({ ...prev, x: prev.x - widthChange }));
+    }
+  };
+
+  const handleResizeEnd = () => {
+    setIsResizing(false);
+    setResizeHandle(null);
+  };
+
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleResizeMove);
+      document.addEventListener('mouseup', handleResizeEnd);
+      return () => {
+        document.removeEventListener('mousemove', handleResizeMove);
+        document.removeEventListener('mouseup', handleResizeEnd);
+      };
+    }
+    return undefined;
+  }, [isResizing, resizeStart, resizeHandle, size]);
+
   const toggleMinimize = () => {
     setIsMinimized(!isMinimized);
   };
@@ -327,12 +415,14 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
   return (
     <div 
       ref={widgetRef}
-      className={`agent-widget slide-up ${isDragOver ? 'drag-over' : ''} ${isDragging ? 'dragging' : ''}`}
+      className={`agent-widget slide-up ${isDragOver ? 'drag-over' : ''} ${isDragging || isResizing ? 'dragging' : ''}`}
       style={{
         position: 'absolute',
         left: position.x,
         top: position.y,
-        zIndex: isDragging ? 1000 : 'auto',
+        width: size.width,
+        height: size.height,
+        zIndex: isDragging || isResizing ? 1000 : 'auto',
       }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -488,6 +578,26 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
             Send
           </button>
         </div>
+      </div>
+      
+      {/* Resize handles */}
+      <div className="resize-handles">
+        <div 
+          className="resize-handle resize-handle-se" 
+          onMouseDown={(e) => handleResizeStart(e, 'se')}
+        />
+        <div 
+          className="resize-handle resize-handle-sw" 
+          onMouseDown={(e) => handleResizeStart(e, 'sw')}
+        />
+        <div 
+          className="resize-handle resize-handle-ne" 
+          onMouseDown={(e) => handleResizeStart(e, 'ne')}
+        />
+        <div 
+          className="resize-handle resize-handle-nw" 
+          onMouseDown={(e) => handleResizeStart(e, 'nw')}
+        />
       </div>
     </div>
   );
