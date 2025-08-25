@@ -258,6 +258,7 @@ export interface AgentEvent {
 export enum AgentEventType {
   CREATED = 'created',
   DESTROYED = 'destroyed',
+  UPDATED = 'updated',
   MESSAGE_SENT = 'message_sent',
   MESSAGE_RECEIVED = 'message_received',
   TASK_STARTED = 'task_started',

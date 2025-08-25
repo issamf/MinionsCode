@@ -2,10 +2,12 @@ import * as vscode from 'vscode';
 import { v4 as uuidv4 } from 'uuid';
 import { AgentConfig, AgentType, AIProvider, AgentEvent, AgentEventType } from '@/shared/types';
 import { SettingsManager } from './SettingsManager';
+import { AvatarService } from '../services/AvatarService';
 
 export class AgentManager {
   private context: vscode.ExtensionContext;
   private settingsManager: SettingsManager;
+  private avatarService: AvatarService;
   private agents: Map<string, AgentConfig> = new Map();
   private eventEmitter = new vscode.EventEmitter<AgentEvent>();
   
@@ -14,7 +16,9 @@ export class AgentManager {
   constructor(context: vscode.ExtensionContext, settingsManager: SettingsManager) {
     this.context = context;
     this.settingsManager = settingsManager;
+    this.avatarService = AvatarService.getInstance(context);
     this.loadPersistedAgents();
+    this.setupAvatarEventHandlers();
   }
 
   public async createAgent(config: Partial<AgentConfig>): Promise<AgentConfig> {
@@ -24,7 +28,7 @@ export class AgentManager {
     const defaultConfig: AgentConfig = {
       id: agentId,
       name: config.name || `Agent ${this.agents.size + 1}`,
-      avatar: config.avatar || this.getDefaultAvatar(config.type || AgentType.CUSTOM),
+      avatar: config.avatar || this.avatarService.allocateAvatar(agentId),
       type: config.type || AgentType.CUSTOM,
       model: config.model || {
         provider: this.settingsManager.getDefaultProvider(),
@@ -73,6 +77,9 @@ export class AgentManager {
     if (!agent) {
       throw new Error(`Agent with id ${agentId} not found`);
     }
+
+    // Release the agent's avatar
+    this.avatarService.releaseAvatar(agentId);
 
     this.agents.delete(agentId);
     await this.persistAgents();
@@ -151,17 +158,6 @@ export class AgentManager {
     }
   }
 
-  private getDefaultAvatar(type: AgentType): string {
-    const avatars = {
-      [AgentType.CODE_REVIEWER]: '👨‍💻',
-      [AgentType.DOCUMENTATION]: '📝',
-      [AgentType.DEVOPS]: '🚀',
-      [AgentType.TESTING]: '🧪',
-      [AgentType.CUSTOM]: '🤖'
-    };
-    
-    return avatars[type] || avatars[AgentType.CUSTOM];
-  }
 
   private getDefaultModelName(provider: AIProvider): string {
     const models = {
@@ -229,6 +225,48 @@ Be helpful, accurate, and focused on the task at hand.`
     };
 
     return prompts[type] || prompts[AgentType.CUSTOM];
+  }
+
+  private setupAvatarEventHandlers(): void {
+    // Listen for avatar deleted events
+    vscode.commands.registerCommand('aiAgents.avatarDeleted', async (data: {
+      agentId: string;
+      avatarId: string;
+      filename: string;
+    }) => {
+      console.log(`Handling avatar deletion for agent ${data.agentId}`);
+      
+      const agent = this.agents.get(data.agentId);
+      if (agent) {
+        // Replace with invalid avatar icon
+        const updatedAgent = {
+          ...agent,
+          avatar: '⚠️', // Invalid avatar indicator
+          updatedAt: new Date()
+        };
+        
+        this.agents.set(data.agentId, updatedAgent);
+        await this.persistAgents();
+        
+        // Emit update event so UI can refresh
+        this.emitEvent(AgentEventType.UPDATED, data.agentId, updatedAgent);
+        
+        console.log(`Replaced deleted avatar with invalid indicator for agent ${data.agentId}`);
+      }
+    });
+  }
+
+  public getAvatarStats(): {
+    total: number;
+    available: number;
+    used: number;
+    fallbacksUsed: number;
+  } {
+    return this.avatarService.getAvatarStats();
+  }
+
+  public refreshAvatars(): void {
+    this.avatarService.refreshAvatars();
   }
 
   private emitEvent(type: AgentEventType, agentId: string, data?: any): void {
