@@ -182,15 +182,26 @@ export class AvatarService {
   }
 
   private getAvatarDisplayValue(avatar: AvatarInfo): string {
-    // For now, we'll use emoji representation of the avatar
-    // In a full implementation, this might return a data URL or file path
-    // that the webview can use to display the image
-    
-    // Map avatar numbers to emojis for better visual representation
+    // Map each avatar file to a unique minion-style emoji
+    // This represents our avatar files until we implement proper image loading
     const num = parseInt(avatar.id.replace('avatar-', ''));
-    const avatarEmojis = ['👤', '👨‍💻', '🧠', '🤖', '👩‍💻', '🎯', '🚀', '💡', '⚡', '🔥', '🌟', '💎'];
+    const minionAvatars = [
+      '😀', // avatar-01 - Happy minion
+      '😎', // avatar-02 - Cool minion  
+      '🤓', // avatar-03 - Smart minion
+      '😋', // avatar-04 - Playful minion
+      '🥳', // avatar-05 - Party minion
+      '🤖', // avatar-06 - Robot minion
+      '🚀', // avatar-07 - Space minion
+      '💡', // avatar-08 - Bright minion
+      '⚡', // avatar-09 - Electric minion
+      '🔥', // avatar-10 - Fire minion
+      '🌟', // avatar-11 - Star minion
+      '💎'  // avatar-12 - Diamond minion
+    ];
     
-    return avatarEmojis[num % avatarEmojis.length] || '👤';
+    console.log(`Using avatar file ${avatar.id} mapped to emoji ${minionAvatars[(num - 1) % minionAvatars.length]}`);
+    return minionAvatars[(num - 1) % minionAvatars.length] || '😀';
   }
 
   public getAvailableAvatarCount(): number {

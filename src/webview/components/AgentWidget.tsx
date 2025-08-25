@@ -200,13 +200,14 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!widgetRef.current) return;
     
-    const rect = widgetRef.current.getBoundingClientRect();
+    // Calculate offset from the mouse position to the widget's position
     setDragOffset({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
+      x: e.clientX - position.x,
+      y: e.clientY - position.y
     });
     setIsDragging(true);
     e.preventDefault();
+    e.stopPropagation(); // Prevent event bubbling
   };
 
   const handleMouseMove = (e: MouseEvent) => {
@@ -216,12 +217,14 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
     if (!container) return;
     
     const containerRect = container.getBoundingClientRect();
+    
+    // Calculate new position based on mouse position and drag offset
     const newX = e.clientX - containerRect.left - dragOffset.x;
     const newY = e.clientY - containerRect.top - dragOffset.y;
     
     // Keep widget within container bounds
-    const maxX = containerRect.width - widgetRef.current.offsetWidth;
-    const maxY = containerRect.height - widgetRef.current.offsetHeight;
+    const maxX = containerRect.width - size.width;
+    const maxY = containerRect.height - size.height;
     
     const clampedX = Math.max(0, Math.min(newX, maxX));
     const clampedY = Math.max(0, Math.min(newY, maxY));

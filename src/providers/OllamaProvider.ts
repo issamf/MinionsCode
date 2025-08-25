@@ -173,9 +173,38 @@ export class OllamaProvider implements IAIProvider {
     try {
       const response = await this.client.get('/api/tags');
       const models = response.data.models?.map((model: any) => model.name) || [];
-      return models.length > 0 ? models : this.supportedModels;
+      console.log(`Detected ${models.length} local Ollama models:`, models);
+      
+      if (models.length === 0) {
+        console.log('No local Ollama models found. User needs to pull models first.');
+        return [];
+      }
+      
+      return models;
+    } catch (error) {
+      console.log('Ollama not available or no models installed:', error);
+      return [];
+    }
+  }
+
+  async getRunningModels(): Promise<string[]> {
+    try {
+      const response = await this.client.get('/api/ps');
+      const runningModels = response.data.models?.map((model: any) => model.name) || [];
+      console.log(`Found ${runningModels.length} running Ollama models:`, runningModels);
+      return runningModels;
+    } catch (error) {
+      console.log('Could not get running models:', error);
+      return [];
+    }
+  }
+
+  async isModelLoaded(modelName: string): Promise<boolean> {
+    try {
+      const runningModels = await this.getRunningModels();
+      return runningModels.includes(modelName);
     } catch {
-      return this.supportedModels;
+      return false;
     }
   }
 
