@@ -439,7 +439,13 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
         onDrop={handleDrop}
       >
         <div className="compact-content" onMouseDown={handleMouseDown}>
-          <div className="compact-avatar">{agent.avatar}</div>
+          <div className="compact-avatar">
+            {agent.avatar.startsWith('vscode-resource://') || agent.avatar.startsWith('vscode-webview://') ? (
+              <img src={agent.avatar} alt="Agent Avatar" className="avatar-image" />
+            ) : (
+              <span className="avatar-emoji">{agent.avatar}</span>
+            )}
+          </div>
           <div className="status-bubble" style={{ backgroundColor: statusDisplay.color }}>
             <span className="status-emoji">{statusDisplay.emoji}</span>
             <span className="status-text">{statusDisplay.text}</span>
@@ -474,7 +480,13 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
       onDrop={handleDrop}
     >
       <div className="agent-header" onMouseDown={handleMouseDown}>
-        <div className="agent-avatar">{agent.avatar}</div>
+        <div className="agent-avatar">
+          {agent.avatar.startsWith('vscode-resource://') || agent.avatar.startsWith('vscode-webview://') ? (
+            <img src={agent.avatar} alt="Agent Avatar" className="avatar-image" />
+          ) : (
+            <span className="avatar-emoji">{agent.avatar}</span>
+          )}
+        </div>
         <div className="agent-info">
           <h3 className="agent-name">{agent.name}</h3>
           <p className="agent-type">
@@ -576,7 +588,13 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
         <div className="chat-messages" ref={chatMessagesRef}>
           {messages.length === 0 ? (
             <div className="empty-state">
-              <div style={{ fontSize: '24px', marginBottom: '8px' }}>{agent.avatar}</div>
+              <div style={{ fontSize: '24px', marginBottom: '8px' }}>
+                {agent.avatar.startsWith('vscode-resource://') || agent.avatar.startsWith('vscode-webview://') ? (
+                  <img src={agent.avatar} alt="Agent Avatar" className="avatar-image" style={{ width: '24px', height: '24px' }} />
+                ) : (
+                  <span className="avatar-emoji">{agent.avatar}</span>
+                )}
+              </div>
               <div style={{ fontSize: '14px', textAlign: 'center' }}>
                 Hi! I'm {agent.name}. How can I help you today?
               </div>

@@ -175,7 +175,8 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
     setFormData(prev => ({
       ...prev,
       avatar: template.avatar,
-      name: prev.name || template.name
+      // Only update name if user hasn't manually entered one
+      name: prev.name === '' || prev.name === selectedTemplate.name ? template.name : prev.name
     }));
   };
 

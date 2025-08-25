@@ -150,11 +150,14 @@ export class WebviewManager {
 
     const agents = this.agentManager.listAgents();
     const projectContext = await this.contextProvider.getProjectContext();
+    
+    // Process all agent avatars for webview display
+    const processedAgents = agents.map(agent => this.processAgentAvatars(agent));
 
     this.panel.webview.postMessage({
       type: 'init',
       data: {
-        agents,
+        agents: processedAgents,
         projectContext,
         settings: {
           // Add relevant settings for the UI
@@ -210,9 +213,12 @@ export class WebviewManager {
     try {
       const agent = await this.agentManager.createAgent(data);
       
+      // Convert avatar to webview URI if it's an avatar file
+      const processedAgent = this.processAgentAvatars(agent);
+      
       this.panel?.webview.postMessage({
         type: 'agentCreated',
-        data: agent
+        data: processedAgent
       });
     } catch (error) {
       this.panel?.webview.postMessage({
@@ -500,6 +506,20 @@ export class WebviewManager {
         }
       }
     }
+  }
+
+  private processAgentAvatars(agent: AgentConfig): AgentConfig {
+    if (agent.avatar.startsWith('avatar:')) {
+      const filename = agent.avatar.replace('avatar:', '');
+      const avatarService = this.agentManager.getAvatarService();
+      const webviewUri = avatarService.getWebviewUri(this.panel!.webview, filename);
+      
+      return {
+        ...agent,
+        avatar: webviewUri.toString()
+      };
+    }
+    return agent;
   }
 
   private getPanelPosition(): vscode.ViewColumn {

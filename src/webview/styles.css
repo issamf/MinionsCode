@@ -143,6 +143,24 @@ body {
   background-color: var(--vscode-button-background);
 }
 
+.agent-avatar .avatar-image {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.compact-avatar .avatar-image {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatar-emoji {
+  font-size: inherit;
+}
+
 .agent-info {
   flex: 1;
 }

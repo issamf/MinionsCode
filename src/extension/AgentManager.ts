@@ -269,6 +269,10 @@ Be helpful, accurate, and focused on the task at hand.`
     this.avatarService.refreshAvatars();
   }
 
+  public getAvatarService(): AvatarService {
+    return this.avatarService;
+  }
+
   private emitEvent(type: AgentEventType, agentId: string, data?: any): void {
     const event: AgentEvent = {
       type,
