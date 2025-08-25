@@ -78,6 +78,36 @@ export const AgentSettingsDialog: React.FC<AgentSettingsDialogProps> = ({
   if (!isOpen) return null;
 
   const handleSave = () => {
+    // Validate agent name if it was changed
+    if (formData.name && formData.name !== agent.name) {
+      const trimmedName = formData.name.trim();
+      
+      if (!trimmedName) {
+        alert('Please enter a name for your agent.');
+        return;
+      }
+      
+      if (trimmedName.length < 2) {
+        alert('Agent name must be at least 2 characters long.');
+        return;
+      }
+      
+      if (trimmedName.length > 50) {
+        alert('Agent name cannot exceed 50 characters.');
+        return;
+      }
+      
+      // Check for reserved names (case-insensitive)
+      const reservedNames = ['everyone', 'all', 'system', 'admin', 'user', 'bot', 'assistant', 'ai', 'claude', 'gpt', 'agent'];
+      if (reservedNames.includes(trimmedName.toLowerCase())) {
+        alert(`"${trimmedName}" is a reserved name and cannot be used. Please choose a different name.`);
+        return;
+      }
+      
+      // Update the formData with trimmed name
+      formData.name = trimmedName;
+    }
+    
     onSave(agent.id, formData);
     onClose();
   };

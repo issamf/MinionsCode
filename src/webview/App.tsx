@@ -4,6 +4,7 @@ import { AgentWidget } from './components/AgentWidget';
 import { CreateAgentDialog } from './components/CreateAgentDialog';
 import { AgentSettingsDialog } from './components/AgentSettingsDialog';
 import { GlobalSettings } from './components/GlobalSettings';
+import { QuickChatDialog } from './components/QuickChatDialog';
 import { webviewLogger } from './utils/webviewLogger';
 
 interface AppState {
@@ -11,9 +12,11 @@ interface AppState {
   showCreateDialog: boolean;
   showSettingsDialog: boolean;
   showGlobalSettings: boolean;
+  showQuickChat: boolean;
   selectedAgentForSettings: string | null;
   pendingProviderConfig: string | null;
   pendingAgentCreation: Partial<AgentConfig> | null;
+  quickChatContext: string | null;
   loading: boolean;
   errorMessage: string | null;
 }
@@ -29,9 +32,11 @@ export const App: React.FC = () => {
     showCreateDialog: false,
     showSettingsDialog: false,
     showGlobalSettings: false,
+    showQuickChat: false,
     selectedAgentForSettings: null,
     pendingProviderConfig: null,
     pendingAgentCreation: null,
+    quickChatContext: null,
     loading: true,
     errorMessage: null
   });
@@ -102,6 +107,14 @@ export const App: React.FC = () => {
 
         case 'showCreateAgentDialog':
           setState(prev => ({ ...prev, showCreateDialog: true }));
+          break;
+
+        case 'showQuickChat':
+          setState(prev => ({ 
+            ...prev, 
+            showQuickChat: true,
+            quickChatContext: message.data?.selectedText 
+          }));
           break;
 
         case 'error':
@@ -252,6 +265,29 @@ export const App: React.FC = () => {
     }
   }, [state.pendingAgentCreation]);
 
+  const closeQuickChat = useCallback(() => {
+    setState(prev => ({ 
+      ...prev, 
+      showQuickChat: false,
+      quickChatContext: null 
+    }));
+  }, []);
+
+  const handleSendMessage = useCallback((message: string, targetAgent?: string) => {
+    webviewLogger.log('Sending quick chat message', { message, targetAgent });
+    
+    // For now, just log the message and close the dialog
+    // TODO: Implement actual message routing to agents
+    console.log('Quick chat message:', { message, targetAgent });
+    
+    vscode.postMessage({
+      type: 'quickChatMessage',
+      data: { message, targetAgent }
+    });
+    
+    closeQuickChat();
+  }, [vscode, closeQuickChat]);
+
   if (state.loading) {
     return (
       <div className="app">
@@ -342,6 +378,15 @@ export const App: React.FC = () => {
           isOpen={state.showSettingsDialog}
           onClose={handleCloseSettings}
           onSave={handleSaveAgentSettings}
+        />
+      )}
+
+      {state.showQuickChat && (
+        <QuickChatDialog
+          agents={state.agents}
+          initialContext={state.quickChatContext}
+          onClose={closeQuickChat}
+          onSendMessage={handleSendMessage}
         />
       )}
 

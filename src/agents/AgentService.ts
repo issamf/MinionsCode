@@ -75,6 +75,10 @@ export class AgentService {
         memory.conversations.slice(-10) // Keep last 10 messages for context
       );
 
+      // Enhance system prompt with specialized behaviors
+      const enhancedPrompt = this.enhanceSystemPromptWithBehaviors(agent, memory, userMessage);
+      messages[0].content = enhancedPrompt;
+      
       // Enhance system prompt based on agent capabilities and available tasks
       if (taskAnalysis.hasTasks) {
         const taskInstructions = this.getTaskInstructions(agent, taskAnalysis.tasks);
@@ -346,6 +350,203 @@ export class AgentService {
       preferredApproaches: memory.learningData.preferredApproaches,
       successfulPatterns: memory.learningData.successfulPatterns
     };
+  }
+
+  private enhanceSystemPromptWithBehaviors(agent: AgentConfig, memory: AgentMemory, userMessage: string): string {
+    let enhancedPrompt = agent.systemPrompt;
+    
+    // Add learning-based context
+    if (memory.learningData.interactionCount > 5) {
+      enhancedPrompt += this.generateLearningContext(memory);
+    }
+    
+    // Add template-specific behaviors
+    enhancedPrompt += this.getTemplateSpecificBehaviors(agent.type, userMessage, memory);
+    
+    // Add interaction history context for better continuity
+    if (memory.conversations.length > 0) {
+      enhancedPrompt += this.generateContinuityContext(memory);
+    }
+    
+    return enhancedPrompt;
+  }
+
+  private generateLearningContext(memory: AgentMemory): string {
+    const topTopics = Object.entries(memory.learningData.commonTopics)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 3)
+      .map(([topic]) => topic);
+    
+    let context = `\n\nLearning Context:
+- You have had ${memory.learningData.interactionCount} interactions with this user
+- Common topics: ${topTopics.join(', ')}
+- Preferred approaches: ${memory.learningData.preferredApproaches.join(', ')}`;
+    
+    if (memory.learningData.successfulPatterns.length > 0) {
+      context += `\n- Successful patterns used: ${memory.learningData.successfulPatterns.join(', ')}`;
+    }
+    
+    return context + '\n\nAdapt your response style based on these learned preferences.';
+  }
+
+  private getTemplateSpecificBehaviors(agentType: string, userMessage: string, memory: AgentMemory): string {
+    const lowerMessage = userMessage.toLowerCase();
+    
+    switch (agentType) {
+      case 'code_reviewer':
+        return this.getCodeReviewerBehavior(lowerMessage, memory);
+      case 'documentation':
+        return this.getDocumentationBehavior(lowerMessage, memory);
+      case 'devops':
+        return this.getDevOpsBehavior(lowerMessage, memory);
+      case 'testing':
+        return this.getTestingBehavior(lowerMessage, memory);
+      case 'custom':
+        return this.getCustomBehavior(lowerMessage, memory);
+      default:
+        return '';
+    }
+  }
+
+  private getCodeReviewerBehavior(message: string, memory: AgentMemory): string {
+    let behavior = `\n\nSpecialized Code Review Behaviors:`;
+    
+    if (message.includes('review') || message.includes('check')) {
+      behavior += `\n- Focus on security vulnerabilities, performance bottlenecks, and maintainability
+- Provide specific line-by-line feedback with suggestions
+- Rate the code quality and explain your reasoning
+- Suggest refactoring opportunities if applicable`;
+    }
+    
+    if (message.includes('bug') || message.includes('error')) {
+      behavior += `\n- Analyze the code for common bug patterns
+- Look for edge cases and error handling issues
+- Suggest defensive programming techniques`;
+    }
+    
+    // Adapt based on learning data
+    if (memory.learningData.commonTopics['debugging']) {
+      behavior += `\n- Pay extra attention to debugging aspects based on previous interactions`;
+    }
+    
+    return behavior;
+  }
+
+  private getDocumentationBehavior(message: string, memory: AgentMemory): string {
+    let behavior = `\n\nSpecialized Documentation Behaviors:`;
+    
+    if (message.includes('document') || message.includes('readme')) {
+      behavior += `\n- Create structured documentation with clear headings
+- Include usage examples and code snippets
+- Add installation and setup instructions
+- Provide troubleshooting section if relevant`;
+    }
+    
+    if (message.includes('api') || message.includes('function')) {
+      behavior += `\n- Document all parameters, return values, and exceptions
+- Provide practical usage examples
+- Include type information and constraints`;
+    }
+    
+    // Adapt based on previous successful patterns
+    if (memory.learningData.successfulPatterns.includes('step_by_step')) {
+      behavior += `\n- Use step-by-step format which worked well in previous interactions`;
+    }
+    
+    return behavior;
+  }
+
+  private getDevOpsBehavior(message: string, _memory: AgentMemory): string {
+    let behavior = `\n\nSpecialized DevOps Behaviors:`;
+    
+    if (message.includes('docker') || message.includes('container')) {
+      behavior += `\n- Provide complete Dockerfile examples with best practices
+- Include multi-stage builds and security considerations
+- Suggest appropriate base images and optimization techniques`;
+    }
+    
+    if (message.includes('deploy') || message.includes('ci/cd')) {
+      behavior += `\n- Focus on automation and reliability
+- Provide YAML configuration examples
+- Include rollback strategies and monitoring setup`;
+    }
+    
+    if (message.includes('kubernetes') || message.includes('k8s')) {
+      behavior += `\n- Provide complete manifests with resource limits
+- Include health checks and scaling configurations
+- Suggest security policies and networking setup`;
+    }
+    
+    return behavior;
+  }
+
+  private getTestingBehavior(message: string, memory: AgentMemory): string {
+    let behavior = `\n\nSpecialized Testing Behaviors:`;
+    
+    if (message.includes('test') || message.includes('testing')) {
+      behavior += `\n- Provide complete test suites with setup and teardown
+- Include edge cases and negative test scenarios
+- Suggest appropriate testing frameworks and patterns
+- Focus on test maintainability and readability`;
+    }
+    
+    if (message.includes('unit') || message.includes('integration')) {
+      behavior += `\n- Create isolated, fast-running tests
+- Mock external dependencies appropriately
+- Ensure good test coverage of critical paths`;
+    }
+    
+    // Adapt based on common topics
+    if (memory.learningData.commonTopics['api']) {
+      behavior += `\n- Include API testing strategies based on previous API discussions`;
+    }
+    
+    return behavior;
+  }
+
+  private getCustomBehavior(message: string, memory: AgentMemory): string {
+    let behavior = `\n\nAdaptive Behaviors:`;
+    
+    // Adapt based on learned topics
+    const topTopics = Object.entries(memory.learningData.commonTopics)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 2)
+      .map(([topic]) => topic);
+    
+    if (topTopics.includes('coding') && message.includes('code')) {
+      behavior += `\n- Provide practical code examples with explanations
+- Focus on best practices and clean code principles`;
+    }
+    
+    if (topTopics.includes('debugging') && (message.includes('error') || message.includes('bug'))) {
+      behavior += `\n- Use systematic debugging approach
+- Provide step-by-step troubleshooting guidance`;
+    }
+    
+    // Adapt based on preferred approaches
+    if (memory.learningData.preferredApproaches.includes('code_first')) {
+      behavior += `\n- Start with code examples, then provide explanations`;
+    } else if (memory.learningData.preferredApproaches.includes('step_by_step')) {
+      behavior += `\n- Use numbered steps and structured explanations`;
+    }
+    
+    return behavior;
+  }
+
+  private generateContinuityContext(memory: AgentMemory): string {
+    if (memory.conversations.length === 0) return '';
+    
+    const recentConversations = memory.conversations.slice(-3);
+    const recentTopics = recentConversations
+      .map(conv => this.extractTopics(conv.content))
+      .flat()
+      .filter((topic, index, arr) => arr.indexOf(topic) === index);
+    
+    if (recentTopics.length === 0) return '';
+    
+    return `\n\nContinuity Context:
+- Recent conversation topics: ${recentTopics.join(', ')}
+- Build upon previous discussions and maintain context consistency`;
   }
 
   private getOrCreateMemory(agentId: string): AgentMemory {

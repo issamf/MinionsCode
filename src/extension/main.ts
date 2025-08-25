@@ -36,7 +36,15 @@ export function activate(context: vscode.ExtensionContext) {
   const quickChatCommand = vscode.commands.registerCommand(
     'aiAgents.quickChat',
     async () => {
-      await webviewManager.showQuickChat();
+      // Get current editor and selection
+      const editor = vscode.window.activeTextEditor;
+      let context: string | undefined;
+      
+      if (editor && !editor.selection.isEmpty) {
+        context = editor.document.getText(editor.selection);
+      }
+      
+      await webviewManager.showQuickChat(context);
     }
   );
 

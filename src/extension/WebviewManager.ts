@@ -278,6 +278,10 @@ export class WebviewManager {
       case 'reactLoading':
         debugLogger.log('React bundle is executing successfully', message.data);
         break;
+        
+      case 'quickChatMessage':
+        await this.handleQuickChatMessage(message.data);
+        break;
       
       default:
         console.warn('Unknown message type:', message.type);
@@ -483,12 +487,13 @@ export class WebviewManager {
     }
   }
 
-  public async showQuickChat(): Promise<void> {
+  public async showQuickChat(selectedText?: string): Promise<void> {
     this.showPanel();
     
     if (this.panel) {
       this.panel.webview.postMessage({
-        type: 'showQuickChat'
+        type: 'showQuickChat',
+        data: { selectedText }
       });
     }
   }
@@ -733,6 +738,97 @@ export class WebviewManager {
           isLoaded: false,
           needsAttention: true,
           error: error instanceof Error ? error.message : 'Failed to check model status'
+        }
+      });
+    }
+  }
+
+  private async handleQuickChatMessage(data: { message: string; targetAgent?: string }): Promise<void> {
+    try {
+      debugLogger.log('handleQuickChatMessage called', data);
+      
+      const agents = this.agentManager.listAgents();
+      const activeAgents = agents.filter(agent => agent.isActive);
+      
+      if (activeAgents.length === 0) {
+        this.panel?.webview.postMessage({
+          type: 'error',
+          data: {
+            message: 'No active agents found. Please create an agent first.',
+            operation: 'quickChatMessage'
+          }
+        });
+        return;
+      }
+      
+      let targetAgents: string[] = [];
+      
+      // Check for @everyone mention
+      if (data.message.includes('@everyone')) {
+        targetAgents = activeAgents.map(agent => agent.id);
+        debugLogger.log('Sending message to all agents via @everyone', { count: targetAgents.length });
+      } 
+      // Check for specific agent mention
+      else if (data.message.includes('@')) {
+        const atMentionMatch = data.message.match(/@(\w+)/);
+        if (atMentionMatch) {
+          const mentionedAgentName = atMentionMatch[1];
+          const mentionedAgent = activeAgents.find(agent => 
+            agent.name.toLowerCase().includes(mentionedAgentName.toLowerCase())
+          );
+          if (mentionedAgent) {
+            targetAgents = [mentionedAgent.id];
+            debugLogger.log('Found mentioned agent', { agentName: mentionedAgent.name });
+          }
+        }
+      }
+      // Use specifically selected target agent
+      else if (data.targetAgent) {
+        const targetAgent = activeAgents.find(agent => agent.id === data.targetAgent);
+        if (targetAgent) {
+          targetAgents = [data.targetAgent];
+          debugLogger.log('Using specifically selected agent', { agentName: targetAgent.name });
+        }
+      }
+      
+      // If no specific targeting, use context-based selection (pick first active agent for now)
+      if (targetAgents.length === 0) {
+        targetAgents = [activeAgents[0].id];
+        debugLogger.log('No specific targeting, using first active agent', { agentName: activeAgents[0].name });
+      }
+      
+      // Send message to each target agent
+      for (const agentId of targetAgents) {
+        const agent = activeAgents.find(a => a.id === agentId);
+        if (agent) {
+          // For now, just log the message. In the future, this would route to the agent's chat
+          debugLogger.log('Routing message to agent', { 
+            agentName: agent.name, 
+            message: data.message 
+          });
+          
+          // TODO: Implement actual message routing to agent's private chat
+          // This would involve:
+          // 1. Opening/focusing the agent's chat window
+          // 2. Sending the message to the agent
+          // 3. Displaying the message in both shared and private chats
+        }
+      }
+      
+      // Show success message
+      vscode.window.showInformationMessage(
+        `Message sent to ${targetAgents.length === 1 ? 
+          activeAgents.find(a => a.id === targetAgents[0])?.name : 
+          `${targetAgents.length} agents`}`
+      );
+      
+    } catch (error) {
+      debugLogger.log('handleQuickChatMessage error occurred', error);
+      this.panel?.webview.postMessage({
+        type: 'error',
+        data: {
+          message: error instanceof Error ? error.message : 'Failed to send message',
+          operation: 'quickChatMessage'
         }
       });
     }

@@ -13,6 +13,21 @@ export class AgentManager {
   private eventEmitter = new vscode.EventEmitter<AgentEvent>();
   private agentService: import('@/agents/AgentService').AgentService | null = null;
   
+  // Reserved names that cannot be used for agents
+  private static readonly RESERVED_NAMES = new Set([
+    'everyone',
+    'all',
+    'system',
+    'admin',
+    'user',
+    'bot',
+    'assistant',
+    'ai',
+    'claude',
+    'gpt',
+    'agent'
+  ]);
+  
   public readonly onAgentEvent = this.eventEmitter.event;
 
   constructor(context: vscode.ExtensionContext, settingsManager: SettingsManager) {
@@ -25,6 +40,61 @@ export class AgentManager {
 
   public setAgentService(agentService: import('@/agents/AgentService').AgentService): void {
     this.agentService = agentService;
+  }
+
+  public validateAgentName(name: string, excludeAgentId?: string): { isValid: boolean; error?: string } {
+    // Trim and normalize the name
+    const normalizedName = name.trim().toLowerCase();
+    
+    // Check if name is empty
+    if (!normalizedName) {
+      return { isValid: false, error: 'Agent name cannot be empty' };
+    }
+    
+    // Check if name is too short
+    if (normalizedName.length < 2) {
+      return { isValid: false, error: 'Agent name must be at least 2 characters long' };
+    }
+    
+    // Check if name is too long
+    if (normalizedName.length > 50) {
+      return { isValid: false, error: 'Agent name cannot exceed 50 characters' };
+    }
+    
+    // Check for reserved names
+    if (AgentManager.RESERVED_NAMES.has(normalizedName)) {
+      return { isValid: false, error: `"${name}" is a reserved name and cannot be used` };
+    }
+    
+    // Check for duplicate names (case-insensitive)
+    for (const [agentId, agent] of this.agents.entries()) {
+      if (excludeAgentId && agentId === excludeAgentId) {
+        continue; // Skip the agent being updated
+      }
+      if (agent.name.toLowerCase() === normalizedName) {
+        return { isValid: false, error: `An agent named "${agent.name}" already exists` };
+      }
+    }
+    
+    return { isValid: true };
+  }
+
+  public generateUniqueAgentName(baseName: string = 'Agent'): string {
+    let counter = 1;
+    let proposedName = baseName;
+    
+    while (!this.validateAgentName(proposedName).isValid) {
+      counter++;
+      proposedName = `${baseName} ${counter}`;
+      
+      // Prevent infinite loop
+      if (counter > 1000) {
+        proposedName = `${baseName} ${Date.now()}`;
+        break;
+      }
+    }
+    
+    return proposedName;
   }
 
   public async createAgent(config: Partial<AgentConfig>): Promise<AgentConfig> {
@@ -75,9 +145,22 @@ export class AgentManager {
         avatarValue = '🤖';
       }
 
+      // Validate and generate unique name
+      let agentName = config.name || 'Agent';
+      const nameValidation = this.validateAgentName(agentName);
+      if (!nameValidation.isValid) {
+        if (config.name) {
+          // If user provided a name and it's invalid, throw error
+          throw new Error(nameValidation.error);
+        } else {
+          // If using default name and it's taken, generate unique one
+          agentName = this.generateUniqueAgentName();
+        }
+      }
+
       const defaultConfig: AgentConfig = {
         id: agentId,
-        name: config.name || `Agent ${this.agents.size + 1}`,
+        name: agentName,
         avatar: avatarValue,
         type: config.type || AgentType.CUSTOM,
         model: config.model || {
@@ -164,6 +247,14 @@ export class AgentManager {
     const agent = this.agents.get(agentId);
     if (!agent) {
       throw new Error(`Agent with id ${agentId} not found`);
+    }
+
+    // Validate name if it's being updated
+    if (updates.name && updates.name !== agent.name) {
+      const nameValidation = this.validateAgentName(updates.name, agentId);
+      if (!nameValidation.isValid) {
+        throw new Error(nameValidation.error);
+      }
     }
 
     const updatedAgent = {

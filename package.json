@@ -57,6 +57,11 @@
         "key": "ctrl+shift+a",
         "mac": "cmd+shift+a",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "aiAgents.createAgent",
+        "key": "ctrl+shift+n",
+        "mac": "cmd+shift+n"
       }
     ],
     "menus": {

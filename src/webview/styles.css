@@ -1510,3 +1510,137 @@ body {
   max-width: 800px;
   max-height: 1000px;
 }
+
+/* Quick Chat Dialog Styles */
+.quick-chat-dialog {
+  width: 90%;
+  max-width: 600px;
+  max-height: 90vh;
+}
+
+.context-info {
+  background: var(--vscode-textCodeBlock-background);
+  border: 1px solid var(--vscode-textBlockQuote-border);
+  border-radius: 4px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.context-label {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.context-preview {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 13px;
+  color: var(--vscode-editor-foreground);
+  white-space: pre-wrap;
+  max-height: 100px;
+  overflow-y: auto;
+  background: var(--vscode-editor-background);
+  padding: 8px;
+  border-radius: 3px;
+}
+
+.agent-mentions {
+  margin-bottom: 16px;
+}
+
+.mentions-label {
+  font-size: 13px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.mention-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mention-btn {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: 1px solid var(--vscode-button-border);
+  border-radius: 16px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mention-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+  transform: translateY(-1px);
+}
+
+.mention-btn.everyone {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.mention-btn.everyone:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.message-input-section {
+  margin-bottom: 16px;
+}
+
+.message-input {
+  width: 100%;
+  min-height: 120px;
+  padding: 12px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  font-family: var(--vscode-font-family);
+  font-size: 14px;
+  line-height: 1.4;
+  resize: vertical;
+  outline: none;
+}
+
+.message-input:focus {
+  border-color: var(--vscode-focusBorder);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder);
+}
+
+.message-input::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+.agent-selection {
+  margin-bottom: 16px;
+}
+
+.agent-selection label {
+  display: block;
+  font-size: 13px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.agent-selection select {
+  width: 100%;
+  padding: 8px;
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: 4px;
+  font-size: 14px;
+  outline: none;
+}
+
+.agent-selection select:focus {
+  border-color: var(--vscode-focusBorder);
+}

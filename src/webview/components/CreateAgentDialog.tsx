@@ -106,6 +106,7 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
   const [availableModels, setAvailableModels] = useState<{ [key: string]: string[] }>({});
   const [modelLoadingStates, setModelLoadingStates] = useState<{ [key: string]: boolean }>({});
   const [modelMessages, setModelMessages] = useState<{ [key: string]: string }>({});
+  const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
     // Load provider status when dialog opens
@@ -146,6 +147,12 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
             model: (!prev.model || prev.model === '') ? message.data.models[0] : prev.model
           }));
         }
+      } else if (message.type === 'error' && message.data.operation === 'createAgent') {
+        setIsCreating(false);
+      } else if (message.type === 'agentCreated') {
+        // Agent created successfully, close dialog
+        setIsCreating(false);
+        onClose();
       }
     };
 
@@ -186,6 +193,33 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
     webviewLogger.log('Current formData', formData);
     webviewLogger.log('Selected template', selectedTemplate);
     
+    
+    // Validate agent name
+    const agentName = formData.name || selectedTemplate.name;
+    const trimmedName = agentName.trim();
+    
+    if (!trimmedName) {
+      alert('Please enter a name for your agent.');
+      return;
+    }
+    
+    if (trimmedName.length < 2) {
+      alert('Agent name must be at least 2 characters long.');
+      return;
+    }
+    
+    if (trimmedName.length > 50) {
+      alert('Agent name cannot exceed 50 characters.');
+      return;
+    }
+    
+    // Check for reserved names (case-insensitive)
+    const reservedNames = ['everyone', 'all', 'system', 'admin', 'user', 'bot', 'assistant', 'ai', 'claude', 'gpt', 'agent'];
+    if (reservedNames.includes(trimmedName.toLowerCase())) {
+      alert(`"${trimmedName}" is a reserved name and cannot be used. Please choose a different name.`);
+      return;
+    }
+    
     // Validate that we have a model selected
     if (!formData.model) {
       webviewLogger.log('ERROR: No model selected');
@@ -194,9 +228,12 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
     }
 
     webviewLogger.log('Creating agent with validated data', formData);
+    
+    // Set loading state
+    setIsCreating(true);
 
     const agentData: Partial<AgentConfig> = {
-      name: formData.name || selectedTemplate.name,
+      name: trimmedName,
       // avatar: formData.avatar, // Let the avatar service assign from files
       type: selectedTemplate.type,
       model: {
@@ -228,12 +265,14 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
     if (needsApiKey && onShowGlobalSettings) {
       // Show global settings for this provider with the agent data
       onShowGlobalSettings(formData.provider, agentData);
+      setIsCreating(false);
       return;
     }
 
     webviewLogger.log('About to call onCreate callback', agentData);
     onCreate(agentData);
     webviewLogger.log('onCreate callback called successfully');
+    // Don't close dialog immediately - wait for success/error response
   };
 
   const getModelsForProvider = (provider: AIProvider): string[] => {
@@ -284,6 +323,7 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
 
           <div className="form-section">
             <h3>Configuration</h3>
+            
             <div className="form-grid">
               <div className="form-group">
                 <label>Name</label>
@@ -385,12 +425,14 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
               e.stopPropagation();
               handleCreate();
             }}
+            disabled={isCreating}
             type="button"
           >
-            {formData.provider !== AIProvider.OLLAMA && !providerStatus[formData.provider] 
-              ? 'Configure & Create Agent'
-              : 'Create Agent'
-            }
+            {isCreating ? 'Creating...' : (
+              formData.provider !== AIProvider.OLLAMA && !providerStatus[formData.provider] 
+                ? 'Configure & Create Agent'
+                : 'Create Agent'
+            )}
           </button>
         </div>
       </div>
