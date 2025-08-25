@@ -8,20 +8,29 @@ interface Message {
   timestamp: Date;
 }
 
+interface SharedContext {
+  files: string[];
+  textSnippets: { content: string; fileName?: string }[];
+}
+
 interface AgentWidgetProps {
   agent: AgentConfig;
   onSendMessage: (agentId: string, message: string) => void;
   onDestroy: (agentId: string) => void;
+  onShowSettings?: (agentId: string) => void;
 }
 
 export const AgentWidget: React.FC<AgentWidgetProps> = ({
   agent,
   onSendMessage,
-  onDestroy
+  onDestroy,
+  onShowSettings
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [sharedContext, setSharedContext] = useState<SharedContext>({ files: [], textSnippets: [] });
+  const [isDragOver, setIsDragOver] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -32,7 +41,7 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
     scrollToBottom();
   }, [messages]);
 
-  // Listen for responses from the agent
+  // Listen for responses and context updates from the agent
   useEffect(() => {
     const messageHandler = (event: MessageEvent) => {
       const message = event.data;
@@ -45,12 +54,65 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
           timestamp: new Date(message.data.timestamp)
         }]);
         setIsLoading(false);
+      } else if (message.type === 'fileDropped' && message.data.agentId === agent.id) {
+        setSharedContext(prev => ({
+          ...prev,
+          files: [...prev.files, message.data.filePath]
+        }));
+      } else if (message.type === 'selectionSent' && message.data.agentId === agent.id) {
+        setSharedContext(prev => ({
+          ...prev,
+          textSnippets: [...prev.textSnippets, {
+            content: message.data.selectedText,
+            fileName: message.data.fileName
+          }]
+        }));
       }
     };
 
     window.addEventListener('message', messageHandler);
     return () => window.removeEventListener('message', messageHandler);
   }, [agent.id]);
+
+  // Drag and drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      files.forEach(file => {
+        setSharedContext(prev => ({
+          ...prev,
+          files: [...prev.files, file.name]
+        }));
+      });
+    }
+  };
+
+  const removeContextItem = (type: 'file' | 'snippet', index: number) => {
+    if (type === 'file') {
+      setSharedContext(prev => ({
+        ...prev,
+        files: prev.files.filter((_, i) => i !== index)
+      }));
+    } else {
+      setSharedContext(prev => ({
+        ...prev,
+        textSnippets: prev.textSnippets.filter((_, i) => i !== index)
+      }));
+    }
+  };
 
   const handleSendMessage = () => {
     if (!inputMessage.trim()) return;
@@ -89,7 +151,12 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
   };
 
   return (
-    <div className="agent-widget slide-up">
+    <div 
+      className={`agent-widget slide-up ${isDragOver ? 'drag-over' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div className="agent-header">
         <div className="agent-avatar">{agent.avatar}</div>
         <div className="agent-info">
@@ -102,7 +169,7 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
           <button
             className="icon-btn"
             title="Agent Settings"
-            onClick={() => {/* TODO: Open settings */}}
+            onClick={() => onShowSettings?.(agent.id)}
           >
             ⚙️
           </button>
@@ -119,6 +186,66 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
           </button>
         </div>
       </div>
+
+      {(sharedContext.files.length > 0 || sharedContext.textSnippets.length > 0) && (
+        <div className="shared-context">
+          <div className="context-header">
+            <span className="context-title">📎 Shared Context</span>
+          </div>
+          
+          {sharedContext.files.length > 0 && (
+            <div className="context-section">
+              <span className="context-label">Files:</span>
+              <div className="context-items">
+                {sharedContext.files.map((file, index) => (
+                  <div key={index} className="context-item file-item">
+                    <span className="file-icon">📄</span>
+                    <span className="file-name">{file}</span>
+                    <button 
+                      className="remove-btn"
+                      onClick={() => removeContextItem('file', index)}
+                      title="Remove file"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {sharedContext.textSnippets.length > 0 && (
+            <div className="context-section">
+              <span className="context-label">Text Snippets:</span>
+              <div className="context-items">
+                {sharedContext.textSnippets.map((snippet, index) => (
+                  <div key={index} className="context-item snippet-item">
+                    <span className="snippet-icon">📝</span>
+                    <div className="snippet-info">
+                      <span className="snippet-preview">
+                        {snippet.content.length > 50 
+                          ? snippet.content.substring(0, 50) + '...' 
+                          : snippet.content
+                        }
+                      </span>
+                      {snippet.fileName && (
+                        <span className="snippet-source">from {snippet.fileName}</span>
+                      )}
+                    </div>
+                    <button 
+                      className="remove-btn"
+                      onClick={() => removeContextItem('snippet', index)}
+                      title="Remove snippet"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="agent-content">
         <div className="chat-messages">

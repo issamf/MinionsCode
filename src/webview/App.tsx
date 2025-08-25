@@ -96,6 +96,13 @@ export const App: React.FC = () => {
     });
   }, [vscode]);
 
+  const handleShowSettings = useCallback((agentId: string) => {
+    vscode.postMessage({
+      type: 'showAgentSettings',
+      data: { agentId }
+    });
+  }, [vscode]);
+
   const showCreateDialog = () => {
     setState(prev => ({ ...prev, showCreateDialog: true }));
   };
@@ -150,6 +157,7 @@ export const App: React.FC = () => {
                 agent={agent}
                 onSendMessage={handleSendMessage}
                 onDestroy={handleDestroyAgent}
+                onShowSettings={handleShowSettings}
               />
             ))}
           </div>

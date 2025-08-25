@@ -20,22 +20,19 @@ export class WebviewManager {
   }
 
   public showPanel(): void {
-    const columnToShowIn = vscode.window.activeTextEditor
-      ? vscode.window.activeTextEditor.viewColumn
-      : undefined;
-
     if (this.panel) {
-      this.panel.reveal(columnToShowIn);
+      this.panel.reveal(vscode.ViewColumn.Beside);
       return;
     }
 
     this.panel = vscode.window.createWebviewPanel(
       'aiAgents',
       'AI Agents',
-      columnToShowIn || vscode.ViewColumn.One,
+      vscode.ViewColumn.Beside,
       {
         enableScripts: true,
         retainContextWhenHidden: true,
+        enableFindWidget: true,
         localResourceRoots: [
           vscode.Uri.joinPath(this.context.extensionUri, 'out', 'webview'),
           vscode.Uri.joinPath(this.context.extensionUri, 'resources')
@@ -174,6 +171,10 @@ export class WebviewManager {
         await this.handleGetProjectContext();
         break;
       
+      case 'showAgentSettings':
+        await this.handleShowAgentSettings(message.data);
+        break;
+      
       default:
         console.warn('Unknown message type:', message.type);
     }
@@ -280,6 +281,39 @@ export class WebviewManager {
     }
   }
 
+  private async handleShowAgentSettings(data: { agentId: string }): Promise<void> {
+    try {
+      const agent = this.agentManager.getAgent(data.agentId);
+      if (!agent) {
+        throw new Error(`Agent with id ${data.agentId} not found`);
+      }
+
+      // For now, just show a notification. Later we'll implement a proper settings dialog
+      vscode.window.showInformationMessage(
+        `Settings for ${agent.name}`,
+        'Edit Model',
+        'Edit Prompt',
+        'Edit Permissions'
+      ).then(selection => {
+        if (selection === 'Edit Model') {
+          vscode.window.showInformationMessage('Model editing coming soon!');
+        } else if (selection === 'Edit Prompt') {
+          vscode.window.showInformationMessage('Prompt editing coming soon!');
+        } else if (selection === 'Edit Permissions') {
+          vscode.window.showInformationMessage('Permission editing coming soon!');
+        }
+      });
+    } catch (error) {
+      this.panel?.webview.postMessage({
+        type: 'error',
+        data: {
+          message: error instanceof Error ? error.message : 'Failed to show agent settings',
+          operation: 'showAgentSettings'
+        }
+      });
+    }
+  }
+
   public async showCreateAgentDialog(): Promise<void> {
     this.showPanel();
     
@@ -304,10 +338,43 @@ export class WebviewManager {
     this.showPanel();
     
     if (this.panel) {
-      this.panel.webview.postMessage({
-        type: 'fileDropped',
-        data: { filePath }
-      });
+      // Get the first active agent or prompt user to select
+      const agents = this.agentManager.listAgents();
+      if (agents.length === 0) {
+        vscode.window.showWarningMessage('No agents available. Create an agent first.');
+        return;
+      }
+      
+      if (agents.length === 1) {
+        this.panel.webview.postMessage({
+          type: 'fileDropped',
+          data: { filePath, agentId: agents[0].id }
+        });
+      } else {
+        // Multiple agents - let user choose or send to all active agents
+        const agentNames = agents.map(a => a.name);
+        const selected = await vscode.window.showQuickPick(
+          [...agentNames, 'All Agents'],
+          { placeHolder: 'Send file to which agent?' }
+        );
+        
+        if (selected === 'All Agents') {
+          agents.forEach(agent => {
+            this.panel!.webview.postMessage({
+              type: 'fileDropped',
+              data: { filePath, agentId: agent.id }
+            });
+          });
+        } else if (selected) {
+          const agent = agents.find(a => a.name === selected);
+          if (agent) {
+            this.panel.webview.postMessage({
+              type: 'fileDropped',
+              data: { filePath, agentId: agent.id }
+            });
+          }
+        }
+      }
     }
   }
 
@@ -315,10 +382,43 @@ export class WebviewManager {
     this.showPanel();
     
     if (this.panel) {
-      this.panel.webview.postMessage({
-        type: 'selectionSent',
-        data: { selectedText, fileName }
-      });
+      // Get the first active agent or prompt user to select
+      const agents = this.agentManager.listAgents();
+      if (agents.length === 0) {
+        vscode.window.showWarningMessage('No agents available. Create an agent first.');
+        return;
+      }
+      
+      if (agents.length === 1) {
+        this.panel.webview.postMessage({
+          type: 'selectionSent',
+          data: { selectedText, fileName, agentId: agents[0].id }
+        });
+      } else {
+        // Multiple agents - let user choose
+        const agentNames = agents.map(a => a.name);
+        const selected = await vscode.window.showQuickPick(
+          [...agentNames, 'All Agents'],
+          { placeHolder: 'Send selection to which agent?' }
+        );
+        
+        if (selected === 'All Agents') {
+          agents.forEach(agent => {
+            this.panel!.webview.postMessage({
+              type: 'selectionSent',
+              data: { selectedText, fileName, agentId: agent.id }
+            });
+          });
+        } else if (selected) {
+          const agent = agents.find(a => a.name === selected);
+          if (agent) {
+            this.panel.webview.postMessage({
+              type: 'selectionSent',
+              data: { selectedText, fileName, agentId: agent.id }
+            });
+          }
+        }
+      }
     }
   }
 

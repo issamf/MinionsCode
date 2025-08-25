@@ -39,6 +39,16 @@
         "command": "aiAgents.quickChat",
         "title": "Quick Chat with Agent",
         "category": "AI Agents"
+      },
+      {
+        "command": "aiAgents.sendToAgent",
+        "title": "Send File to Agent",
+        "category": "AI Agents"
+      },
+      {
+        "command": "aiAgents.sendSelectionToAgent",
+        "title": "Send Selection to Agent",
+        "category": "AI Agents"
       }
     ],
     "keybindings": [
