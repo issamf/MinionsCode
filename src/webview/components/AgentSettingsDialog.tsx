@@ -16,6 +16,9 @@ export const AgentSettingsDialog: React.FC<AgentSettingsDialogProps> = ({
 }) => {
   const [formData, setFormData] = useState<Partial<AgentConfig>>({});
   const [activeTab, setActiveTab] = useState<'model' | 'prompt' | 'permissions'>('model');
+  const [availableModels, setAvailableModels] = useState<{ [key: string]: string[] }>({});
+  const [modelLoadingStates, setModelLoadingStates] = useState<{ [key: string]: boolean }>({});
+  const [modelMessages, setModelMessages] = useState<{ [key: string]: string }>({});
 
   useEffect(() => {
     if (isOpen && agent) {
@@ -27,6 +30,50 @@ export const AgentSettingsDialog: React.FC<AgentSettingsDialogProps> = ({
       });
     }
   }, [isOpen, agent]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const message = event.data;
+      
+      if (message.type === 'availableModels') {
+        setAvailableModels(prev => ({
+          ...prev,
+          [message.data.provider]: message.data.models
+        }));
+        
+        setModelLoadingStates(prev => ({
+          ...prev,
+          [message.data.provider]: false
+        }));
+        
+        if (message.data.message) {
+          setModelMessages(prev => ({
+            ...prev,
+            [message.data.provider]: message.data.message
+          }));
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const fetchModelsForProvider = (provider: AIProvider) => {
+    setModelLoadingStates(prev => ({ ...prev, [provider]: true }));
+    setModelMessages(prev => ({ ...prev, [provider]: '' }));
+    
+    (window as any).vscode.postMessage({
+      type: 'getAvailableModels',
+      data: { provider: provider.toLowerCase() }
+    });
+  };
+
+  useEffect(() => {
+    if (isOpen && formData.model?.provider) {
+      fetchModelsForProvider(formData.model.provider);
+    }
+  }, [isOpen, formData.model?.provider]);
 
   if (!isOpen) return null;
 
@@ -43,6 +90,10 @@ export const AgentSettingsDialog: React.FC<AgentSettingsDialogProps> = ({
         [field]: value
       }
     }));
+    
+    if (field === 'provider') {
+      fetchModelsForProvider(value);
+    }
   };
 
   const handlePermissionChange = (permissionType: PermissionType, value: boolean) => {
@@ -78,13 +129,19 @@ export const AgentSettingsDialog: React.FC<AgentSettingsDialogProps> = ({
   ];
 
   const getModelsForProvider = (provider: AIProvider): string[] => {
+    const providerKey = provider.toLowerCase();
+    
+    if (availableModels[providerKey]) {
+      return availableModels[providerKey];
+    }
+    
     switch (provider) {
-      case AIProvider.OLLAMA:
-        return ['llama3.1', 'llama3.1:8b', 'llama3.1:70b', 'codellama', 'mistral', 'qwen2.5'];
       case AIProvider.ANTHROPIC:
         return ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307', 'claude-3-opus-20240229'];
       case AIProvider.OPENAI:
         return ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'];
+      case AIProvider.OLLAMA:
+        return [];
       default:
         return [];
     }
@@ -154,8 +211,19 @@ export const AgentSettingsDialog: React.FC<AgentSettingsDialogProps> = ({
                   id="model-name"
                   value={formData.model?.modelName || ''}
                   onChange={(e) => handleModelChange('modelName', e.target.value)}
+                  disabled={modelLoadingStates[formData.model?.provider?.toLowerCase() || '']}
                 >
-                  {getModelsForProvider(formData.model?.provider || AIProvider.OLLAMA).map(model => (
+                  {modelLoadingStates[formData.model?.provider?.toLowerCase() || ''] && (
+                    <option value="">Loading models...</option>
+                  )}
+                  {!modelLoadingStates[formData.model?.provider?.toLowerCase() || ''] && 
+                   getModelsForProvider(formData.model?.provider || AIProvider.OLLAMA).length === 0 && (
+                    <option value="">
+                      {modelMessages[formData.model?.provider?.toLowerCase() || ''] || 'No models available'}
+                    </option>
+                  )}
+                  {!modelLoadingStates[formData.model?.provider?.toLowerCase() || ''] && 
+                   getModelsForProvider(formData.model?.provider || AIProvider.OLLAMA).map(model => (
                     <option key={model} value={model}>
                       {model}
                     </option>

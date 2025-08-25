@@ -191,6 +191,14 @@ export class WebviewManager {
         await this.handleShareFile(message.data);
         break;
       
+      case 'getAvailableModels':
+        await this.handleGetAvailableModels(message.data);
+        break;
+      
+      case 'checkModelStatus':
+        await this.handleCheckModelStatus(message.data);
+        break;
+      
       default:
         console.warn('Unknown message type:', message.type);
     }
@@ -489,6 +497,97 @@ export class WebviewManager {
           }
         }
       }
+    }
+  }
+
+  private async handleGetAvailableModels(data: { provider: string }): Promise<void> {
+    try {
+      let models: string[] = [];
+      
+      if (data.provider === 'ollama') {
+        // Get available Ollama models
+        const { OllamaProvider } = await import('@/providers/OllamaProvider');
+        const ollamaProvider = new OllamaProvider();
+        
+        if (await ollamaProvider.isAvailable()) {
+          models = await ollamaProvider.getAvailableModels();
+          console.log(`Found ${models.length} Ollama models:`, models);
+        } else {
+          console.log('Ollama is not available');
+          models = [];
+        }
+      } else if (data.provider === 'anthropic') {
+        models = ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307', 'claude-3-opus-20240229'];
+      } else if (data.provider === 'openai') {
+        models = ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'];
+      }
+      
+      this.panel?.webview.postMessage({
+        type: 'availableModels',
+        data: {
+          provider: data.provider,
+          models: models,
+          message: models.length === 0 && data.provider === 'ollama' 
+            ? 'No local models are running' 
+            : undefined
+        }
+      });
+    } catch (error) {
+      console.error('Failed to get available models:', error);
+      this.panel?.webview.postMessage({
+        type: 'availableModels',
+        data: {
+          provider: data.provider,
+          models: [],
+          error: error instanceof Error ? error.message : 'Failed to fetch models'
+        }
+      });
+    }
+  }
+
+  private async handleCheckModelStatus(data: { provider: string; modelName: string }): Promise<void> {
+    try {
+      let isAvailable = false;
+      let isLoaded = false;
+      
+      if (data.provider === 'ollama') {
+        const { OllamaProvider } = await import('@/providers/OllamaProvider');
+        const ollamaProvider = new OllamaProvider();
+        
+        if (await ollamaProvider.isAvailable()) {
+          const availableModels = await ollamaProvider.getAvailableModels();
+          isAvailable = availableModels.includes(data.modelName);
+          isLoaded = await ollamaProvider.isModelLoaded(data.modelName);
+        }
+      } else {
+        // For cloud providers, assume they're available if API keys are configured
+        isAvailable = true;
+        isLoaded = true;
+      }
+      
+      this.panel?.webview.postMessage({
+        type: 'modelStatus',
+        data: {
+          provider: data.provider,
+          modelName: data.modelName,
+          isAvailable,
+          isLoaded,
+          needsAttention: isAvailable && !isLoaded
+        }
+      });
+    } catch (error) {
+      console.error('Failed to check model status:', error);
+      this.panel?.webview.postMessage({
+        type: 'modelStatus',
+        data: {
+          provider: data.provider,
+          modelName: data.modelName,
+          isAvailable: false,
+          isLoaded: false,
+          needsAttention: true,
+          error: error instanceof Error ? error.message : 'Failed to check model status'
+        }
+      });
     }
   }
 

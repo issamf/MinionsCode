@@ -86,9 +86,9 @@ Be helpful, accurate, and focused on the task at hand.`
 ];
 
 const AI_PROVIDERS = [
-  { value: AIProvider.ANTHROPIC, label: 'Anthropic (Claude)', models: ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'] },
-  { value: AIProvider.OPENAI, label: 'OpenAI (GPT)', models: ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'] },
-  { value: AIProvider.OLLAMA, label: 'Ollama (Local)', models: ['llama3.1', 'llama2', 'codellama'] }
+  { value: AIProvider.ANTHROPIC, label: 'Anthropic (Claude)' },
+  { value: AIProvider.OPENAI, label: 'OpenAI (GPT)' },
+  { value: AIProvider.OLLAMA, label: 'Ollama (Local)' }
 ];
 
 export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, onCreate, onShowGlobalSettings }) => {
@@ -102,6 +102,9 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
     customPrompt: false
   });
   const [providerStatus, setProviderStatus] = useState<{[key: string]: boolean}>({});
+  const [availableModels, setAvailableModels] = useState<{ [key: string]: string[] }>({});
+  const [modelLoadingStates, setModelLoadingStates] = useState<{ [key: string]: boolean }>({});
+  const [modelMessages, setModelMessages] = useState<{ [key: string]: string }>({});
 
   useEffect(() => {
     // Load provider status when dialog opens
@@ -117,6 +120,31 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
           status[provider] = message.data[provider].configured && message.data[provider].valid;
         });
         setProviderStatus(status);
+      } else if (message.type === 'availableModels') {
+        setAvailableModels(prev => ({
+          ...prev,
+          [message.data.provider]: message.data.models
+        }));
+        
+        setModelLoadingStates(prev => ({
+          ...prev,
+          [message.data.provider]: false
+        }));
+        
+        if (message.data.message) {
+          setModelMessages(prev => ({
+            ...prev,
+            [message.data.provider]: message.data.message
+          }));
+        }
+
+        // Auto-select first available model if no model is currently selected
+        if (message.data.models.length > 0 && message.data.provider === formData.provider.toLowerCase()) {
+          setFormData(prev => ({
+            ...prev,
+            model: prev.model || message.data.models[0]
+          }));
+        }
       }
     };
 
@@ -126,7 +154,21 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
     return () => {
       window.removeEventListener('message', messageHandler);
     };
-  }, []);
+  }, [formData.provider]);
+
+  const fetchModelsForProvider = (provider: AIProvider) => {
+    setModelLoadingStates(prev => ({ ...prev, [provider.toLowerCase()]: true }));
+    setModelMessages(prev => ({ ...prev, [provider.toLowerCase()]: '' }));
+    
+    (window as any).vscode.postMessage({
+      type: 'getAvailableModels',
+      data: { provider: provider.toLowerCase() }
+    });
+  };
+
+  useEffect(() => {
+    fetchModelsForProvider(formData.provider);
+  }, [formData.provider]);
 
   const handleTemplateSelect = (template: typeof AGENT_TEMPLATES[0]) => {
     setSelectedTemplate(template);
@@ -177,7 +219,25 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
     onCreate(agentData);
   };
 
-  const selectedProvider = AI_PROVIDERS.find(p => p.value === formData.provider);
+  const getModelsForProvider = (provider: AIProvider): string[] => {
+    const providerKey = provider.toLowerCase();
+    
+    if (availableModels[providerKey]) {
+      return availableModels[providerKey];
+    }
+    
+    // Fallback for non-Ollama providers
+    switch (provider) {
+      case AIProvider.ANTHROPIC:
+        return ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307', 'claude-3-opus-20240229'];
+      case AIProvider.OPENAI:
+        return ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'];
+      case AIProvider.OLLAMA:
+        return [];
+      default:
+        return [];
+    }
+  };
 
   return (
     <div className="dialog-overlay" onClick={onClose}>
@@ -232,11 +292,14 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
                 <label>AI Provider</label>
                 <select
                   value={formData.provider}
-                  onChange={(e) => setFormData(prev => ({
-                    ...prev,
-                    provider: (e.target as HTMLSelectElement).value as AIProvider,
-                    model: AI_PROVIDERS.find(p => p.value === (e.target as HTMLSelectElement).value)?.models[0] || ''
-                  }))}
+                  onChange={(e) => {
+                    const newProvider = (e.target as HTMLSelectElement).value as AIProvider;
+                    setFormData(prev => ({
+                      ...prev,
+                      provider: newProvider,
+                      model: '' // Reset model when provider changes
+                    }));
+                  }}
                 >
                   {AI_PROVIDERS.map(provider => (
                     <option key={provider.value} value={provider.value}>
@@ -251,8 +314,19 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
                 <select
                   value={formData.model}
                   onChange={(e) => setFormData(prev => ({ ...prev, model: (e.target as HTMLSelectElement).value }))}
+                  disabled={modelLoadingStates[formData.provider.toLowerCase()]}
                 >
-                  {selectedProvider?.models.map(model => (
+                  {modelLoadingStates[formData.provider.toLowerCase()] && (
+                    <option value="">Loading models...</option>
+                  )}
+                  {!modelLoadingStates[formData.provider.toLowerCase()] && 
+                   getModelsForProvider(formData.provider).length === 0 && (
+                    <option value="">
+                      {modelMessages[formData.provider.toLowerCase()] || 'No models available'}
+                    </option>
+                  )}
+                  {!modelLoadingStates[formData.provider.toLowerCase()] && 
+                   getModelsForProvider(formData.provider).map(model => (
                     <option key={model} value={model}>{model}</option>
                   ))}
                 </select>
