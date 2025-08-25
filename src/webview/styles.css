@@ -1301,3 +1301,81 @@ body {
   font-weight: 600;
   margin-bottom: 4px;
 }
+
+/* Compact Agent Widget (Minimized State) */
+.agent-widget-compact {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 20px;
+  background-color: var(--vscode-panel-background);
+  width: fit-content;
+  max-width: 280px;
+  min-width: 160px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s ease;
+}
+
+.agent-widget-compact:hover {
+  border-color: var(--vscode-focusBorder);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.agent-widget-compact.dragging {
+  opacity: 0.7;
+  transform: rotate(2deg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.compact-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: move;
+}
+
+.compact-avatar {
+  font-size: 24px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.status-bubble {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: white;
+  flex: 1;
+  min-width: 0;
+}
+
+.status-emoji {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.status-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.expand-btn {
+  background: none;
+  border: none;
+  color: var(--vscode-icon-foreground);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.expand-btn:hover {
+  background-color: var(--vscode-toolbar-hoverBackground);
+  color: var(--vscode-foreground);
+}

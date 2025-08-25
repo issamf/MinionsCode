@@ -34,10 +34,10 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
   const [sharedContext, setSharedContext] = useState<SharedContext>({ files: [], textSnippets: [] });
   const [isDragOver, setIsDragOver] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [originalSize, setOriginalSize] = useState({ width: 400, height: 500 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [position, setPosition] = useState(initialPosition || { x: 0, y: 0 });
+  const [agentStatus, setAgentStatus] = useState<'idle' | 'thinking' | 'typing' | 'responding'>('idle');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<HTMLDivElement>(null);
 
@@ -56,6 +56,7 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
       
       if (message.type === 'messageThinking' && message.data.agentId === agent.id) {
         setIsLoading(message.data.thinking);
+        setAgentStatus(message.data.thinking ? 'thinking' : 'idle');
       } else if (message.type === 'messageResponse' && message.data.agentId === agent.id) {
         if (message.data.done) {
           // Final response - add to messages
@@ -79,7 +80,9 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
             return newMessages;
           });
           setIsLoading(false);
+          setAgentStatus('idle');
         } else {
+          setAgentStatus('responding');
           // Streaming response - update or add streaming message
           setMessages(prev => {
             const newMessages = [...prev];
@@ -233,14 +236,6 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
   }, [isDragging, dragOffset]);
 
   const toggleMinimize = () => {
-    if (!widgetRef.current) return;
-    
-    if (!isMinimized) {
-      // Store current size before minimizing
-      const rect = widgetRef.current.getBoundingClientRect();
-      setOriginalSize({ width: rect.width, height: rect.height });
-    }
-    
     setIsMinimized(!isMinimized);
   };
 
@@ -256,6 +251,7 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
 
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
+    setAgentStatus('thinking');
     onSendMessage(agent.id, inputMessage);
     setInputMessage('');
   };
@@ -280,17 +276,63 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
     return modelName.replace(/^(gpt-|claude-|gemini-)/, '').replace(/-\d{8}$/, '');
   };
 
+  const getStatusDisplay = (status: typeof agentStatus) => {
+    switch (status) {
+      case 'thinking':
+        return { emoji: '💭', text: 'Thinking...', color: '#fbbf24' };
+      case 'responding':
+        return { emoji: '💬', text: 'Responding...', color: '#10b981' };
+      case 'typing':
+        return { emoji: '⌨️', text: 'Typing...', color: '#6366f1' };
+      default:
+        return { emoji: '😴', text: 'Idle', color: '#6b7280' };
+    }
+  };
+
+  const statusDisplay = getStatusDisplay(agentStatus);
+
+  if (isMinimized) {
+    return (
+      <div 
+        ref={widgetRef}
+        className={`agent-widget-compact slide-up ${isDragOver ? 'drag-over' : ''} ${isDragging ? 'dragging' : ''}`}
+        style={{
+          position: 'absolute',
+          left: position.x,
+          top: position.y,
+          zIndex: isDragging ? 1000 : 'auto',
+        }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <div className="compact-content" onMouseDown={handleMouseDown}>
+          <div className="compact-avatar">{agent.avatar}</div>
+          <div className="status-bubble" style={{ backgroundColor: statusDisplay.color }}>
+            <span className="status-emoji">{statusDisplay.emoji}</span>
+            <span className="status-text">{statusDisplay.text}</span>
+          </div>
+          <button 
+            className="expand-btn"
+            title="Expand agent"
+            onClick={toggleMinimize}
+          >
+            ↗
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div 
       ref={widgetRef}
-      className={`agent-widget slide-up ${isDragOver ? 'drag-over' : ''} ${isMinimized ? 'widget-minimized' : ''} ${isDragging ? 'dragging' : ''}`}
+      className={`agent-widget slide-up ${isDragOver ? 'drag-over' : ''} ${isDragging ? 'dragging' : ''}`}
       style={{
         position: 'absolute',
         left: position.x,
         top: position.y,
         zIndex: isDragging ? 1000 : 'auto',
-        width: isMinimized ? originalSize.width : undefined,
-        height: isMinimized ? 48 : undefined
       }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
