@@ -180,6 +180,22 @@ export const App: React.FC = () => {
     });
   }, [vscode]);
 
+  const handleModelChange = useCallback((agentId: string, model: { provider: AIProvider; modelName: string }) => {
+    webviewLogger.log('Hot-swapping model', { agentId, model });
+    vscode.postMessage({
+      type: 'updateAgent',
+      data: { 
+        agentId, 
+        updates: { 
+          model: {
+            ...state.agents.find(a => a.id === agentId)?.model,
+            ...model
+          }
+        }
+      }
+    });
+  }, [vscode, state.agents]);
+
   const handleCloseSettings = useCallback(() => {
     setState(prev => ({ 
       ...prev, 
@@ -216,6 +232,12 @@ export const App: React.FC = () => {
   const dismissError = () => {
     setState(prev => ({ ...prev, errorMessage: null }));
   };
+
+  const handleRefresh = useCallback(() => {
+    webviewLogger.log('Manual refresh requested');
+    setState(prev => ({ ...prev, loading: true }));
+    vscode.postMessage({ type: 'ready' });
+  }, [vscode]);
 
   const handleProviderConfigured = useCallback((_provider: AIProvider) => {
     // If we have a pending agent creation, complete it now
@@ -262,7 +284,7 @@ export const App: React.FC = () => {
           <button className="btn btn-secondary" onClick={() => showGlobalSettings()}>
             ⚙️ Settings
           </button>
-          <button className="btn btn-secondary" onClick={() => window.location.reload()}>
+          <button className="btn btn-secondary" onClick={handleRefresh}>
             Refresh
           </button>
         </div>
@@ -295,6 +317,7 @@ export const App: React.FC = () => {
                 onSendMessage={handleSendMessage}
                 onDestroy={handleDestroyAgent}
                 onShowSettings={handleShowSettings}
+                onModelChange={handleModelChange}
                 initialPosition={{
                   x: (index % 3) * 420 + 20,
                   y: Math.floor(index / 3) * 320 + 20

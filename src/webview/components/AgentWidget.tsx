@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { AgentConfig } from '@/shared/types';
+import { AgentConfig, AIProvider } from '@/shared/types';
 import { webviewLogger } from '../utils/webviewLogger';
 
 interface Message {
@@ -19,6 +19,7 @@ interface AgentWidgetProps {
   onSendMessage: (agentId: string, message: string) => void;
   onDestroy: (agentId: string) => void;
   onShowSettings?: (agentId: string) => void;
+  onModelChange?: (agentId: string, model: { provider: AIProvider; modelName: string }) => void;
   initialPosition?: { x: number; y: number };
 }
 
@@ -27,6 +28,7 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
   onSendMessage,
   onDestroy,
   onShowSettings,
+  onModelChange,
   initialPosition
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -48,6 +50,9 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const [savedScrollPosition, setSavedScrollPosition] = useState<number | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showModelSwitcher, setShowModelSwitcher] = useState(false);
+  const [availableModels, setAvailableModels] = useState<{ [key: string]: string[] }>({});
+  // const [isModelLoading, setIsModelLoading] = useState(false); // TODO: Use for loading states
 
   // Size constraints
   const MIN_WIDTH = 300;
@@ -151,12 +156,34 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
             fileName: message.data.fileName
           }]
         }));
+      } else if (message.type === 'availableModels') {
+        setAvailableModels(prev => ({
+          ...prev,
+          [message.data.provider]: message.data.models
+        }));
+        // setIsModelLoading(false); // TODO: Use for loading states
       }
     };
 
     window.addEventListener('message', messageHandler);
     return () => window.removeEventListener('message', messageHandler);
   }, [agent.id]);
+
+  // Close model switcher when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showModelSwitcher && widgetRef.current && !widgetRef.current.contains(event.target as Node)) {
+        setShowModelSwitcher(false);
+      }
+    };
+
+    if (showModelSwitcher) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+    
+    return undefined;
+  }, [showModelSwitcher]);
 
   // Drag and drop handlers
   const handleDragEnter = (e: React.DragEvent) => {
@@ -409,6 +436,27 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
     return modelName.replace(/^(gpt-|claude-|gemini-)/, '').replace(/-\d{8}$/, '');
   };
 
+  const handleQuickModelChange = (modelName: string) => {
+    if (onModelChange) {
+      onModelChange(agent.id, { provider: agent.model.provider, modelName });
+      webviewLogger.log('Quick model switch', { agentId: agent.id, newModel: modelName });
+    }
+  };
+
+  const getQuickModelOptions = () => {
+    const provider = agent.model.provider;
+    switch (provider) {
+      case AIProvider.ANTHROPIC:
+        return ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'];
+      case AIProvider.OPENAI:
+        return ['gpt-4o', 'gpt-4o-mini'];
+      case AIProvider.OLLAMA:
+        return availableModels.ollama?.slice(0, 2) || [];
+      default:
+        return [];
+    }
+  };
+
   const getStatusDisplay = (status: typeof agentStatus) => {
     switch (status) {
       case 'thinking':
@@ -491,9 +539,82 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
         </div>
         <div className="agent-info">
           <h3 className="agent-name">{agent.name}</h3>
-          <p className="agent-type">
-            {getAgentTypeDisplayName(agent.type)} • {agent.model.provider} • {getModelDisplayName(agent.model.modelName)}
-          </p>
+          <div className="agent-model-info">
+            <span className="agent-type">
+              {getAgentTypeDisplayName(agent.type)} • {agent.model.provider}
+            </span>
+            <div className="model-switcher" style={{ position: 'relative', display: 'inline-block' }}>
+              <button 
+                className="model-quick-switch"
+                title="Click to switch model"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowModelSwitcher(!showModelSwitcher);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--vscode-foreground)',
+                  cursor: 'pointer',
+                  fontSize: 'inherit',
+                  textDecoration: 'underline',
+                  padding: 0
+                }}
+              >
+                {getModelDisplayName(agent.model.modelName)}
+              </button>
+              {showModelSwitcher && (
+                <div className="model-options" style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  zIndex: 1000,
+                  background: 'var(--vscode-dropdown-background)',
+                  border: '1px solid var(--vscode-dropdown-border)',
+                  borderRadius: '3px',
+                  minWidth: '150px',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                  marginTop: '2px'
+                }}>
+                  {getQuickModelOptions().map(model => (
+                    <button
+                      key={model}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleQuickModelChange(model);
+                        setShowModelSwitcher(false);
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      style={{
+                        width: '100%',
+                        padding: '6px 12px',
+                        border: 'none',
+                        background: model === agent.model.modelName ? 'var(--vscode-list-activeSelectionBackground)' : 'transparent',
+                        color: 'var(--vscode-foreground)',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (model !== agent.model.modelName) {
+                          (e.target as HTMLElement).style.background = 'var(--vscode-list-hoverBackground)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (model !== agent.model.modelName) {
+                          (e.target as HTMLElement).style.background = 'transparent';
+                        }
+                      }}
+                    >
+                      {getModelDisplayName(model)}
+                      {model === agent.model.modelName && ' ✓'}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
         <div className="agent-actions">
           <div className="widget-controls">

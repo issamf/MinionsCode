@@ -27,6 +27,8 @@ export class WebviewManager {
 
   private async initializeAgentService(): Promise<void> {
     try {
+      this.agentService.setContext(this.context);
+      this.agentManager.setAgentService(this.agentService);
       await this.agentService.initialize();
     } catch (error) {
       console.error('Failed to initialize agent service:', error);
@@ -69,6 +71,21 @@ export class WebviewManager {
     this.panel.onDidDispose(
       () => {
         this.panel = null;
+      },
+      null,
+      this.context.subscriptions
+    );
+
+    // Handle webview visibility changes and refreshes
+    this.panel.onDidChangeViewState(
+      (e) => {
+        if (e.webviewPanel.visible && e.webviewPanel.active) {
+          debugLogger.log('Panel became visible, sending data');
+          // When panel becomes visible, ensure webview has latest data
+          setTimeout(() => {
+            this.sendInitialData();
+          }, 100); // Small delay to ensure webview is ready
+        }
       },
       null,
       this.context.subscriptions
@@ -156,44 +173,56 @@ export class WebviewManager {
 
   private async sendInitialData(): Promise<void> {
     if (!this.panel) {
-      console.log('sendInitialData: No panel available');
+      debugLogger.log('sendInitialData: No panel available');
       return;
     }
 
-    const agents = this.agentManager.listAgents();
-    const projectContext = await this.contextProvider.getProjectContext();
-    
-    console.log(`sendInitialData: Sending ${agents.length} agents to webview`);
-    
-    // Process all agent avatars for webview display
-    debugLogger.log('Processing avatars for agents', { agentCount: agents.length, agentIds: agents.map(a => a.id) });
-    let processedAgents;
     try {
-      processedAgents = agents.map(agent => {
-        debugLogger.log('Processing avatar for agent', { agentId: agent.id, avatar: agent.avatar });
-        const processed = this.processAgentAvatars(agent);
-        debugLogger.log('Avatar processed successfully', { agentId: agent.id, originalAvatar: agent.avatar, processedAvatar: processed.avatar });
-        return processed;
-      });
-      debugLogger.log('All avatars processed successfully');
-    } catch (error) {
-      debugLogger.log('ERROR: Avatar processing failed', error);
-      // Fallback: send agents without avatar processing
-      processedAgents = agents;
-    }
-
-    this.panel.webview.postMessage({
-      type: 'init',
-      data: {
-        agents: processedAgents,
-        projectContext,
-        settings: {
-          // Add relevant settings for the UI
-        }
+      const agents = this.agentManager.listAgents();
+      const projectContext = await this.contextProvider.getProjectContext();
+      
+      debugLogger.log(`sendInitialData: Sending ${agents.length} agents to webview`);
+      
+      // Process all agent avatars for webview display
+      debugLogger.log('Processing avatars for agents', { agentCount: agents.length, agentIds: agents.map(a => a.id) });
+      let processedAgents;
+      try {
+        processedAgents = agents.map(agent => {
+          debugLogger.log('Processing avatar for agent', { agentId: agent.id, avatar: agent.avatar });
+          const processed = this.processAgentAvatars(agent);
+          debugLogger.log('Avatar processed successfully', { agentId: agent.id, originalAvatar: agent.avatar, processedAvatar: processed.avatar });
+          return processed;
+        });
+        debugLogger.log('All avatars processed successfully');
+      } catch (error) {
+        debugLogger.log('ERROR: Avatar processing failed', error);
+        // Fallback: send agents without avatar processing
+        processedAgents = agents;
       }
-    });
-    
-    console.log('sendInitialData: Initial data sent to webview');
+
+      this.panel.webview.postMessage({
+        type: 'init',
+        data: {
+          agents: processedAgents,
+          projectContext,
+          settings: {
+            // Add relevant settings for the UI
+          }
+        }
+      });
+      
+      debugLogger.log('sendInitialData: Initial data sent to webview successfully');
+    } catch (error) {
+      debugLogger.log('ERROR in sendInitialData', error);
+      // Send error to webview if something goes wrong
+      this.panel.webview.postMessage({
+        type: 'error',
+        data: {
+          message: 'Failed to load panel data',
+          operation: 'sendInitialData'
+        }
+      });
+    }
   }
 
   private async handleWebviewMessage(message: any): Promise<void> {
@@ -202,6 +231,7 @@ export class WebviewManager {
     switch (message.type) {
       case 'ready':
         debugLogger.log('Webview ready, sending initial data');
+        // Clear any potential loading state in the webview and send fresh data
         await this.sendInitialData();
         break;
         

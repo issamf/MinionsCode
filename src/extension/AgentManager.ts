@@ -11,6 +11,7 @@ export class AgentManager {
   private avatarService: AvatarService;
   private agents: Map<string, AgentConfig> = new Map();
   private eventEmitter = new vscode.EventEmitter<AgentEvent>();
+  private agentService: import('@/agents/AgentService').AgentService | null = null;
   
   public readonly onAgentEvent = this.eventEmitter.event;
 
@@ -20,6 +21,10 @@ export class AgentManager {
     this.avatarService = AvatarService.getInstance(context);
     this.loadPersistedAgents();
     this.setupAvatarEventHandlers();
+  }
+
+  public setAgentService(agentService: import('@/agents/AgentService').AgentService): void {
+    this.agentService = agentService;
   }
 
   public async createAgent(config: Partial<AgentConfig>): Promise<AgentConfig> {
@@ -131,6 +136,11 @@ export class AgentManager {
     const agent = this.agents.get(agentId);
     if (!agent) {
       throw new Error(`Agent with id ${agentId} not found`);
+    }
+
+    // Clear agent memory
+    if (this.agentService) {
+      await this.agentService.clearPersistedMemory(agentId);
     }
 
     // Release the agent's avatar
