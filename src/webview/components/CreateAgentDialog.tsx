@@ -182,7 +182,7 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
   const handleCreate = () => {
     const agentData: Partial<AgentConfig> = {
       name: formData.name || selectedTemplate.name,
-      avatar: formData.avatar,
+      // avatar: formData.avatar, // Let the avatar service assign from files
       type: selectedTemplate.type,
       model: {
         provider: formData.provider,
@@ -278,15 +278,6 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
                 />
               </div>
 
-              <div className="form-group">
-                <label>Avatar</label>
-                <input
-                  type="text"
-                  value={formData.avatar}
-                  onChange={(e) => setFormData(prev => ({ ...prev, avatar: (e.target as HTMLInputElement).value }))}
-                  placeholder="🤖"
-                />
-              </div>
 
               <div className="form-group">
                 <label>AI Provider</label>

@@ -37,10 +37,12 @@ export class WebviewManager {
       return;
     }
 
+    const panelPosition = this.getPanelPosition();
+    
     this.panel = vscode.window.createWebviewPanel(
       'aiAgents',
       'AI Agents',
-      vscode.ViewColumn.Beside,
+      panelPosition,
       {
         enableScripts: true,
         retainContextWhenHidden: true,
@@ -497,6 +499,29 @@ export class WebviewManager {
           }
         }
       }
+    }
+  }
+
+  private getPanelPosition(): vscode.ViewColumn {
+    const config = vscode.workspace.getConfiguration('aiAgents');
+    const position = config.get<string>('panelPosition', 'right');
+    
+    switch (position) {
+      case 'top':
+        // For top positioning, we'll need to manipulate editor layout
+        vscode.commands.executeCommand('workbench.action.editorLayoutTwoRows').then(() => {
+          vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
+        });
+        return vscode.ViewColumn.Two;
+      case 'bottom':
+        // For bottom positioning, we'll manipulate editor layout
+        vscode.commands.executeCommand('workbench.action.editorLayoutTwoRows').then(() => {
+          vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
+        });
+        return vscode.ViewColumn.Two;
+      case 'right':
+      default:
+        return vscode.ViewColumn.Beside;
     }
   }
 

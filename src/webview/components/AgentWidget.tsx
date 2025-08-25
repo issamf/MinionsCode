@@ -44,6 +44,8 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
   const [resizeStart, setResizeStart] = useState({ mouseX: 0, mouseY: 0, width: 0, height: 0 });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<HTMLDivElement>(null);
+  const chatMessagesRef = useRef<HTMLDivElement>(null);
+  const [savedScrollPosition, setSavedScrollPosition] = useState<number | null>(null);
 
   // Size constraints
   const MIN_WIDTH = 300;
@@ -55,9 +57,31 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // Save scroll position when minimizing
+  const saveScrollPosition = () => {
+    if (chatMessagesRef.current) {
+      const scrollContainer = chatMessagesRef.current;
+      setSavedScrollPosition(scrollContainer.scrollTop);
+    }
+  };
+
+  // Restore scroll position when maximizing
+  const restoreScrollPosition = () => {
+    if (chatMessagesRef.current && savedScrollPosition !== null) {
+      const scrollContainer = chatMessagesRef.current;
+      setTimeout(() => {
+        scrollContainer.scrollTop = savedScrollPosition;
+        setSavedScrollPosition(null);
+      }, 0);
+    }
+  };
+
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    // Only auto-scroll to bottom for new messages if we're not restoring position
+    if (savedScrollPosition === null) {
+      scrollToBottom();
+    }
+  }, [messages, savedScrollPosition]);
 
   // Listen for responses and context updates from the agent
   useEffect(() => {
@@ -133,18 +157,27 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
   }, [agent.id]);
 
   // Drag and drop handlers
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragOver(true);
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragOver(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragOver(false);
     
     try {
@@ -327,6 +360,13 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
   }, [isResizing, resizeStart, resizeHandle, size]);
 
   const toggleMinimize = () => {
+    if (!isMinimized) {
+      // Minimizing - save current scroll position
+      saveScrollPosition();
+    } else {
+      // Maximizing - restore scroll position after DOM update
+      setTimeout(restoreScrollPosition, 0);
+    }
     setIsMinimized(!isMinimized);
   };
 
@@ -393,6 +433,7 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
           top: position.y,
           zIndex: isDragging ? 1000 : 'auto',
         }}
+        onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -427,6 +468,7 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
         height: size.height,
         zIndex: isDragging || isResizing ? 1000 : 'auto',
       }}
+      onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -531,7 +573,7 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
       )}
 
       <div className="agent-content">
-        <div className="chat-messages">
+        <div className="chat-messages" ref={chatMessagesRef}>
           {messages.length === 0 ? (
             <div className="empty-state">
               <div style={{ fontSize: '24px', marginBottom: '8px' }}>{agent.avatar}</div>
