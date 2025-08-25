@@ -18,20 +18,28 @@ interface AgentWidgetProps {
   onSendMessage: (agentId: string, message: string) => void;
   onDestroy: (agentId: string) => void;
   onShowSettings?: (agentId: string) => void;
+  initialPosition?: { x: number; y: number };
 }
 
 export const AgentWidget: React.FC<AgentWidgetProps> = ({
   agent,
   onSendMessage,
   onDestroy,
-  onShowSettings
+  onShowSettings,
+  initialPosition
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sharedContext, setSharedContext] = useState<SharedContext>({ files: [], textSnippets: [] });
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [originalSize, setOriginalSize] = useState({ width: 400, height: 500 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [position, setPosition] = useState(initialPosition || { x: 0, y: 0 });
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const widgetRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -46,14 +54,51 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
     const messageHandler = (event: MessageEvent) => {
       const message = event.data;
       
-      if (message.type === 'messageResponse' && message.data.agentId === agent.id) {
-        setMessages(prev => [...prev, {
-          id: Date.now().toString(),
-          content: message.data.response,
-          isUser: false,
-          timestamp: new Date(message.data.timestamp)
-        }]);
-        setIsLoading(false);
+      if (message.type === 'messageThinking' && message.data.agentId === agent.id) {
+        setIsLoading(message.data.thinking);
+      } else if (message.type === 'messageResponse' && message.data.agentId === agent.id) {
+        if (message.data.done) {
+          // Final response - add to messages
+          setMessages(prev => {
+            const newMessages = [...prev];
+            // Check if we already have this message (for streaming)
+            const lastMessage = newMessages[newMessages.length - 1];
+            if (lastMessage && !lastMessage.isUser && lastMessage.id === 'streaming') {
+              // Update the streaming message
+              lastMessage.content = message.data.response;
+              lastMessage.id = Date.now().toString();
+            } else {
+              // Add new message
+              newMessages.push({
+                id: Date.now().toString(),
+                content: message.data.response,
+                isUser: false,
+                timestamp: new Date(message.data.timestamp)
+              });
+            }
+            return newMessages;
+          });
+          setIsLoading(false);
+        } else {
+          // Streaming response - update or add streaming message
+          setMessages(prev => {
+            const newMessages = [...prev];
+            const lastMessage = newMessages[newMessages.length - 1];
+            if (lastMessage && !lastMessage.isUser && lastMessage.id === 'streaming') {
+              // Update streaming message
+              lastMessage.content = message.data.response;
+            } else {
+              // Add new streaming message
+              newMessages.push({
+                id: 'streaming',
+                content: message.data.response,
+                isUser: false,
+                timestamp: new Date(message.data.timestamp)
+              });
+            }
+            return newMessages;
+          });
+        }
       } else if (message.type === 'fileDropped' && message.data.agentId === agent.id) {
         setSharedContext(prev => ({
           ...prev,
@@ -89,14 +134,38 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
     e.preventDefault();
     setIsDragOver(false);
     
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      files.forEach(file => {
-        setSharedContext(prev => ({
-          ...prev,
-          files: [...prev.files, file.name]
-        }));
-      });
+    try {
+      // Handle file drops from VSCode explorer
+      const data = e.dataTransfer.getData('text/plain');
+      if (data) {
+        // This is likely a file path from VSCode
+        const filePaths = data.split('\n').filter(path => path.trim());
+        filePaths.forEach(filePath => {
+          if (filePath) {
+            // Send message to extension to handle file sharing
+            window.postMessage({
+              type: 'shareFile',
+              data: { agentId: agent.id, filePath: filePath.trim() }
+            }, '*');
+          }
+        });
+        return;
+      }
+
+      // Handle regular file drops
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length > 0) {
+        files.forEach(file => {
+          // For regular file drops, we can only get the file name
+          // The extension would need to handle the actual file reading
+          window.postMessage({
+            type: 'shareFile', 
+            data: { agentId: agent.id, filePath: file.name }
+          }, '*');
+        });
+      }
+    } catch (error) {
+      console.error('Error handling file drop:', error);
     }
   };
 
@@ -112,6 +181,67 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
         textSnippets: prev.textSnippets.filter((_, i) => i !== index)
       }));
     }
+  };
+
+  // Widget dragging handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!widgetRef.current) return;
+    
+    const rect = widgetRef.current.getBoundingClientRect();
+    setDragOffset({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    });
+    setIsDragging(true);
+    e.preventDefault();
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDragging || !widgetRef.current) return;
+    
+    const container = widgetRef.current.parentElement;
+    if (!container) return;
+    
+    const containerRect = container.getBoundingClientRect();
+    const newX = e.clientX - containerRect.left - dragOffset.x;
+    const newY = e.clientY - containerRect.top - dragOffset.y;
+    
+    // Keep widget within container bounds
+    const maxX = containerRect.width - widgetRef.current.offsetWidth;
+    const maxY = containerRect.height - widgetRef.current.offsetHeight;
+    
+    const clampedX = Math.max(0, Math.min(newX, maxX));
+    const clampedY = Math.max(0, Math.min(newY, maxY));
+    
+    setPosition({ x: clampedX, y: clampedY });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+    return undefined;
+  }, [isDragging, dragOffset]);
+
+  const toggleMinimize = () => {
+    if (!widgetRef.current) return;
+    
+    if (!isMinimized) {
+      // Store current size before minimizing
+      const rect = widgetRef.current.getBoundingClientRect();
+      setOriginalSize({ width: rect.width, height: rect.height });
+    }
+    
+    setIsMinimized(!isMinimized);
   };
 
   const handleSendMessage = () => {
@@ -152,12 +282,21 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
 
   return (
     <div 
-      className={`agent-widget slide-up ${isDragOver ? 'drag-over' : ''}`}
+      ref={widgetRef}
+      className={`agent-widget slide-up ${isDragOver ? 'drag-over' : ''} ${isMinimized ? 'widget-minimized' : ''} ${isDragging ? 'dragging' : ''}`}
+      style={{
+        position: 'absolute',
+        left: position.x,
+        top: position.y,
+        zIndex: isDragging ? 1000 : 'auto',
+        width: isMinimized ? originalSize.width : undefined,
+        height: isMinimized ? 48 : undefined
+      }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div className="agent-header">
+      <div className="agent-header" onMouseDown={handleMouseDown}>
         <div className="agent-avatar">{agent.avatar}</div>
         <div className="agent-info">
           <h3 className="agent-name">{agent.name}</h3>
@@ -166,6 +305,15 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
           </p>
         </div>
         <div className="agent-actions">
+          <div className="widget-controls">
+            <button
+              className="control-btn"
+              title={isMinimized ? "Maximize" : "Minimize"}
+              onClick={toggleMinimize}
+            >
+              {isMinimized ? '□' : '—'}
+            </button>
+          </div>
           <button
             className="icon-btn"
             title="Agent Settings"

@@ -1,12 +1,14 @@
 import * as vscode from 'vscode';
 import { AgentManager } from './AgentManager';
 import { ContextProvider } from './ContextProvider';
+import { AgentService } from '@/agents/AgentService';
 import { AgentConfig } from '@/shared/types';
 
 export class WebviewManager {
   private context: vscode.ExtensionContext;
   private agentManager: AgentManager;
   private contextProvider: ContextProvider;
+  private agentService: AgentService;
   private panel: vscode.WebviewPanel | null = null;
 
   constructor(
@@ -17,6 +19,16 @@ export class WebviewManager {
     this.context = context;
     this.agentManager = agentManager;
     this.contextProvider = contextProvider;
+    this.agentService = new AgentService();
+    this.initializeAgentService();
+  }
+
+  private async initializeAgentService(): Promise<void> {
+    try {
+      await this.agentService.initialize();
+    } catch (error) {
+      console.error('Failed to initialize agent service:', error);
+    }
   }
 
   public showPanel(): void {
@@ -175,6 +187,10 @@ export class WebviewManager {
         await this.handleShowAgentSettings(message.data);
         break;
       
+      case 'shareFile':
+        await this.handleShareFile(message.data);
+        break;
+      
       default:
         console.warn('Unknown message type:', message.type);
     }
@@ -239,24 +255,46 @@ export class WebviewManager {
 
   private async handleSendMessage(data: { agentId: string; message: string; context?: any }): Promise<void> {
     try {
-      // TODO: Implement actual message sending to AI provider
-      // For now, just echo back a response
-      setTimeout(() => {
-        this.panel?.webview.postMessage({
-          type: 'messageResponse',
-          data: {
-            agentId: data.agentId,
-            response: `Echo: ${data.message}`,
-            timestamp: new Date().toISOString()
-          }
-        });
-      }, 1000);
-    } catch (error) {
+      const agent = this.agentManager.getAgent(data.agentId);
+      if (!agent) {
+        throw new Error(`Agent with id ${data.agentId} not found`);
+      }
+
+      // Send initial response to show agent is thinking
       this.panel?.webview.postMessage({
-        type: 'error',
+        type: 'messageThinking',
         data: {
-          message: error instanceof Error ? error.message : 'Failed to send message',
-          operation: 'sendMessage'
+          agentId: data.agentId,
+          thinking: true
+        }
+      });
+
+      // Process message with AI service
+      await this.agentService.processMessage(
+        agent,
+        data.message,
+        (chunk: string, done: boolean) => {
+          this.panel?.webview.postMessage({
+            type: 'messageResponse',
+            data: {
+              agentId: data.agentId,
+              response: chunk,
+              done: done,
+              timestamp: new Date().toISOString()
+            }
+          });
+        }
+      );
+
+    } catch (error) {
+      console.error('Error in handleSendMessage:', error);
+      this.panel?.webview.postMessage({
+        type: 'messageResponse',
+        data: {
+          agentId: data.agentId,
+          response: `I apologize, but I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}. Please check that your AI provider is configured correctly.`,
+          done: true,
+          timestamp: new Date().toISOString()
         }
       });
     }
@@ -314,6 +352,28 @@ export class WebviewManager {
     }
   }
 
+  private async handleShareFile(data: { agentId: string; filePath: string }): Promise<void> {
+    try {
+      // Add file to agent's shared context
+      this.agentService.addSharedFile(data.agentId, data.filePath);
+      
+      // Send confirmation back to webview
+      this.panel?.webview.postMessage({
+        type: 'fileDropped',
+        data: { filePath: data.filePath, agentId: data.agentId }
+      });
+    } catch (error) {
+      console.error('Error sharing file:', error);
+      this.panel?.webview.postMessage({
+        type: 'error',
+        data: {
+          message: error instanceof Error ? error.message : 'Failed to share file',
+          operation: 'shareFile'
+        }
+      });
+    }
+  }
+
   public async showCreateAgentDialog(): Promise<void> {
     this.showPanel();
     
@@ -346,6 +406,9 @@ export class WebviewManager {
       }
       
       if (agents.length === 1) {
+        // Add file to agent's shared context
+        this.agentService.addSharedFile(agents[0].id, filePath);
+        
         this.panel.webview.postMessage({
           type: 'fileDropped',
           data: { filePath, agentId: agents[0].id }
@@ -360,6 +423,7 @@ export class WebviewManager {
         
         if (selected === 'All Agents') {
           agents.forEach(agent => {
+            this.agentService.addSharedFile(agent.id, filePath);
             this.panel!.webview.postMessage({
               type: 'fileDropped',
               data: { filePath, agentId: agent.id }
@@ -368,6 +432,7 @@ export class WebviewManager {
         } else if (selected) {
           const agent = agents.find(a => a.name === selected);
           if (agent) {
+            this.agentService.addSharedFile(agent.id, filePath);
             this.panel.webview.postMessage({
               type: 'fileDropped',
               data: { filePath, agentId: agent.id }
@@ -390,6 +455,9 @@ export class WebviewManager {
       }
       
       if (agents.length === 1) {
+        // Add text snippet to agent's shared context
+        this.agentService.addTextSnippet(agents[0].id, selectedText, fileName);
+        
         this.panel.webview.postMessage({
           type: 'selectionSent',
           data: { selectedText, fileName, agentId: agents[0].id }
@@ -404,6 +472,7 @@ export class WebviewManager {
         
         if (selected === 'All Agents') {
           agents.forEach(agent => {
+            this.agentService.addTextSnippet(agent.id, selectedText, fileName);
             this.panel!.webview.postMessage({
               type: 'selectionSent',
               data: { selectedText, fileName, agentId: agent.id }
@@ -412,6 +481,7 @@ export class WebviewManager {
         } else if (selected) {
           const agent = agents.find(a => a.name === selected);
           if (agent) {
+            this.agentService.addTextSnippet(agent.id, selectedText, fileName);
             this.panel.webview.postMessage({
               type: 'selectionSent',
               data: { selectedText, fileName, agentId: agent.id }

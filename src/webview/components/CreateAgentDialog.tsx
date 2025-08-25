@@ -87,7 +87,6 @@ Be helpful, accurate, and focused on the task at hand.`
 const AI_PROVIDERS = [
   { value: AIProvider.ANTHROPIC, label: 'Anthropic (Claude)', models: ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'] },
   { value: AIProvider.OPENAI, label: 'OpenAI (GPT)', models: ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'] },
-  { value: AIProvider.GOOGLE, label: 'Google (Gemini)', models: ['gemini-pro', 'gemini-pro-vision'] },
   { value: AIProvider.OLLAMA, label: 'Ollama (Local)', models: ['llama3.1', 'llama2', 'codellama'] }
 ];
 
@@ -99,7 +98,8 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
     provider: AIProvider.ANTHROPIC,
     model: 'claude-3-5-sonnet-20241022',
     temperature: 0.7,
-    customPrompt: false
+    customPrompt: false,
+    apiKey: ''
   });
 
   const handleTemplateSelect = (template: typeof AGENT_TEMPLATES[0]) => {
@@ -112,6 +112,14 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
   };
 
   const handleCreate = () => {
+    // First save the API key if provided
+    if (formData.apiKey && formData.provider !== AIProvider.OLLAMA as AIProvider) {
+      window.postMessage({
+        type: 'saveAPIKey',
+        data: { provider: formData.provider, key: formData.apiKey }
+      }, '*');
+    }
+
     const agentData: Partial<AgentConfig> = {
       name: formData.name || selectedTemplate.name,
       avatar: formData.avatar,
@@ -223,6 +231,46 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
                 </select>
               </div>
 
+              {formData.provider !== AIProvider.OLLAMA as AIProvider && (
+                <div className="form-group">
+                  <label>
+                    API Key 
+                    <span className="required">*</span>
+                    <a
+                      href={formData.provider === AIProvider.ANTHROPIC 
+                        ? 'https://console.anthropic.com/' 
+                        : formData.provider === AIProvider.OPENAI
+                        ? 'https://platform.openai.com/'
+                        : '#'
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="api-key-link"
+                      title="Get API Key"
+                    >
+                      🔗 Get Key
+                    </a>
+                  </label>
+                  <input
+                    type="password"
+                    value={formData.apiKey}
+                    onChange={(e) => setFormData(prev => ({ ...prev, apiKey: (e.target as HTMLInputElement).value }))}
+                    placeholder={formData.provider === AIProvider.ANTHROPIC 
+                      ? 'sk-ant-api03-...' 
+                      : formData.provider === AIProvider.OPENAI
+                      ? 'sk-...'
+                      : 'Enter API Key'
+                    }
+                    required={formData.provider !== AIProvider.OLLAMA as AIProvider}
+                  />
+                  {!formData.apiKey && (
+                    <small className="api-key-help">
+                      Required for {AI_PROVIDERS.find(p => p.value === formData.provider)?.label}. This will be stored securely in VSCode settings.
+                    </small>
+                  )}
+                </div>
+              )}
+
               <div className="form-group">
                 <label>Temperature ({formData.temperature})</label>
                 <input
@@ -247,7 +295,11 @@ export const CreateAgentDialog: React.FC<CreateAgentDialogProps> = ({ onClose, o
           <button className="btn btn-secondary" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn btn-primary" onClick={handleCreate}>
+          <button 
+            className="btn btn-primary" 
+            onClick={handleCreate}
+            disabled={formData.provider !== AIProvider.OLLAMA as AIProvider && !formData.apiKey}
+          >
             Create Agent
           </button>
         </div>

@@ -2,10 +2,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { AgentConfig } from '@/shared/types';
 import { AgentWidget } from './components/AgentWidget';
 import { CreateAgentDialog } from './components/CreateAgentDialog';
+import { AgentSettingsDialog } from './components/AgentSettingsDialog';
+import { APIKeyManager } from './components/APIKeyManager';
 
 interface AppState {
   agents: AgentConfig[];
   showCreateDialog: boolean;
+  showSettingsDialog: boolean;
+  showAPIKeyManager: boolean;
+  selectedAgentForSettings: string | null;
   loading: boolean;
 }
 
@@ -13,6 +18,9 @@ export const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
     agents: [],
     showCreateDialog: false,
+    showSettingsDialog: false,
+    showAPIKeyManager: false,
+    selectedAgentForSettings: null,
     loading: true
   });
 
@@ -97,11 +105,27 @@ export const App: React.FC = () => {
   }, [vscode]);
 
   const handleShowSettings = useCallback((agentId: string) => {
+    setState(prev => ({ 
+      ...prev, 
+      showSettingsDialog: true,
+      selectedAgentForSettings: agentId
+    }));
+  }, []);
+
+  const handleSaveAgentSettings = useCallback((agentId: string, updates: Partial<AgentConfig>) => {
     vscode.postMessage({
-      type: 'showAgentSettings',
-      data: { agentId }
+      type: 'updateAgent',
+      data: { agentId, updates }
     });
   }, [vscode]);
+
+  const handleCloseSettings = useCallback(() => {
+    setState(prev => ({ 
+      ...prev, 
+      showSettingsDialog: false,
+      selectedAgentForSettings: null
+    }));
+  }, []);
 
   const showCreateDialog = () => {
     setState(prev => ({ ...prev, showCreateDialog: true }));
@@ -109,6 +133,14 @@ export const App: React.FC = () => {
 
   const hideCreateDialog = () => {
     setState(prev => ({ ...prev, showCreateDialog: false }));
+  };
+
+  const showAPIKeyManager = () => {
+    setState(prev => ({ ...prev, showAPIKeyManager: true }));
+  };
+
+  const hideAPIKeyManager = () => {
+    setState(prev => ({ ...prev, showAPIKeyManager: false }));
   };
 
   if (state.loading) {
@@ -129,6 +161,9 @@ export const App: React.FC = () => {
         <div className="header-actions">
           <button className="btn btn-primary" onClick={showCreateDialog}>
             + Create Agent
+          </button>
+          <button className="btn btn-secondary" onClick={showAPIKeyManager}>
+            🔑 API Keys
           </button>
           <button className="btn btn-secondary" onClick={() => window.location.reload()}>
             Refresh
@@ -151,13 +186,17 @@ export const App: React.FC = () => {
           </div>
         ) : (
           <div className="agents-grid">
-            {state.agents.map((agent) => (
+            {state.agents.map((agent, index) => (
               <AgentWidget
                 key={agent.id}
                 agent={agent}
                 onSendMessage={handleSendMessage}
                 onDestroy={handleDestroyAgent}
                 onShowSettings={handleShowSettings}
+                initialPosition={{
+                  x: (index % 3) * 420 + 20,
+                  y: Math.floor(index / 3) * 320 + 20
+                }}
               />
             ))}
           </div>
@@ -168,6 +207,22 @@ export const App: React.FC = () => {
         <CreateAgentDialog
           onClose={hideCreateDialog}
           onCreate={handleCreateAgent}
+        />
+      )}
+
+      {state.showSettingsDialog && state.selectedAgentForSettings && (
+        <AgentSettingsDialog
+          agent={state.agents.find(a => a.id === state.selectedAgentForSettings)!}
+          isOpen={state.showSettingsDialog}
+          onClose={handleCloseSettings}
+          onSave={handleSaveAgentSettings}
+        />
+      )}
+
+      {state.showAPIKeyManager && (
+        <APIKeyManager
+          isOpen={state.showAPIKeyManager}
+          onClose={hideAPIKeyManager}
         />
       )}
     </div>

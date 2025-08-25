@@ -19,7 +19,6 @@ build/
 
 # IDE files
 .vscode/settings.json
-.vscode/launch.json
 .idea/
 *.swp
 *.swo
