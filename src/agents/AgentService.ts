@@ -17,6 +17,9 @@ interface AgentMemory {
     successfulPatterns: string[];
     interactionCount: number;
   };
+  contextSummary?: string; // Compressed context when window is full
+  totalTokensUsed: number;
+  sessionCount: number;
 }
 
 export class AgentService {
@@ -58,7 +61,9 @@ export class AgentService {
             preferredApproaches: [],
             successfulPatterns: [],
             interactionCount: 0
-          }
+          },
+          totalTokensUsed: 0,
+          sessionCount: 1
         };
         this.agentMemories.set(agent.id, memory);
       }
@@ -66,13 +71,17 @@ export class AgentService {
       // Check if the message contains task requests
       const taskAnalysis = this.analyzeForTasks(userMessage, agent.type);
       
-      // Create contextual messages
+      // Handle context window management
+      await this.manageContextWindow(memory, agent.model.maxTokens);
+      
+      // Create contextual messages with appropriate conversation history
+      const conversationHistory = this.getOptimalConversationHistory(memory, agent.model.maxTokens);
       const messages = this.providerManager.createContextualMessages(
         userMessage,
         agent.systemPrompt,
         memory.sharedFiles,
         memory.textSnippets,
-        memory.conversations.slice(-10) // Keep last 10 messages for context
+        conversationHistory
       );
 
       // Enhance system prompt with specialized behaviors
@@ -100,6 +109,12 @@ export class AgentService {
           onResponse(chunk.content, chunk.done);
           
           if (chunk.done) {
+            // Execute any tasks found in the AI response (fire and forget to avoid blocking)
+            this.executeTasksFromResponse(agent, chunk.content).catch(error => {
+              console.error('Error executing tasks from response:', error);
+              vscode.window.showErrorMessage(`Task execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            });
+            
             // Update memory with the conversation
             memory!.conversations.push(
               { role: 'user', content: userMessage },
@@ -117,9 +132,6 @@ export class AgentService {
             
             // Persist memory after conversation update
             this.persistMemories();
-            
-            // Execute any tasks if the response contains task commands
-            this.executeTasksFromResponse(agent, chunk.content);
           }
         }
       );
@@ -563,7 +575,9 @@ export class AgentService {
           preferredApproaches: [],
           successfulPatterns: [],
           interactionCount: 0
-        }
+        },
+        totalTokensUsed: 0,
+        sessionCount: 1
       };
       this.agentMemories.set(agentId, memory);
     }
@@ -597,53 +611,161 @@ export class AgentService {
     let instructions = '\nTask Execution Capabilities:\n';
     
     if (tasks.includes('file_operations')) {
-      instructions += '- You can create, modify, or save files by using the format: `[CREATE_FILE: filename.ext]\\n[content here]\\n[/CREATE_FILE]`\n';
+      instructions += `
+**File Operations:**
+- Create new files: \`[CREATE_FILE: path/filename.ext]\\ncontent here\\n[/CREATE_FILE]\`
+- Edit existing files: \`[EDIT_FILE: path/filename.ext]\\n[FIND]old content[/FIND]\\n[REPLACE]new content[/REPLACE]\\n[/EDIT_FILE]\`
+- Read files: \`[READ_file: path/filename.ext]\`
+- Search in files: \`[GREP: pattern, path/glob/pattern]\`
+- Find files: \`[FIND_FILES: filename_pattern]\`
+- Delete files: \`[DELETE_FILE: path/filename.ext]\`
+
+**Code Operations:**
+- Insert code at specific location: \`[INSERT_CODE: filename.ext:line_number]\\ncode here\\n[/INSERT_CODE]\`
+- Replace code section: \`[REPLACE_CODE: filename.ext]\\n[FIND]old code[/FIND]\\n[REPLACE]new code[/REPLACE]\\n[/REPLACE_CODE]\`
+- Open file in editor: \`[OPEN_EDITOR: path/filename.ext]\`
+- Format/organize imports: \`[FORMAT_FILE: path/filename.ext]\`
+`;
     }
     
     if (tasks.includes('git_operations')) {
-      instructions += '- You can perform git operations using: `[GIT_COMMAND: git status]` or `[GIT_COMMIT: commit message]`\n';
+      instructions += '- Git operations: `[GIT_COMMAND: git status]` or `[GIT_COMMIT: commit message]`\n';
     }
     
     if (tasks.includes('command_execution')) {
-      instructions += '- You can execute shell commands using: `[RUN_COMMAND: npm install]`\n';
+      instructions += '- Execute commands: `[RUN_COMMAND: npm install]`\n';
     }
 
-    instructions += '\nWhen the user asks you to perform these tasks, use the appropriate format in your response and I will execute them for you.';
+    instructions += '\n**Important**: I can perform these operations directly in the background. When you need file modifications, code changes, or project operations, I will execute them immediately rather than just providing instructions.';
     
     return instructions;
   }
 
   private async executeTasksFromResponse(_agent: AgentConfig, response: string): Promise<void> {
-    // Parse task commands from AI response
-    const fileCreateRegex = /\[CREATE_FILE:\s*([^\]]+)\]\n([\s\S]*?)\[\/CREATE_FILE\]/g;
-    const gitCommandRegex = /\[GIT_COMMAND:\s*([^\]]+)\]/g;
-    const gitCommitRegex = /\[GIT_COMMIT:\s*([^\]]+)\]/g;
-    const runCommandRegex = /\[RUN_COMMAND:\s*([^\]]+)\]/g;
+    // Parse all task commands from AI response
+    const patterns = {
+      fileCreate: /\[CREATE_FILE:\s*([^\]]+)\]\n([\s\S]*?)\[\/CREATE_FILE\]/g,
+      fileEdit: /\[EDIT_FILE:\s*([^\]]+)\]\n\[FIND\]([\s\S]*?)\[\/FIND\]\n\[REPLACE\]([\s\S]*?)\[\/REPLACE\]\n\[\/EDIT_FILE\]/g,
+      readFile: /\[READ_file:\s*([^\]]+)\]/g,
+      grep: /\[GREP:\s*([^,]+),\s*([^\]]+)\]/g,
+      findFiles: /\[FIND_FILES:\s*([^\]]+)\]/g,
+      deleteFile: /\[DELETE_FILE:\s*([^\]]+)\]/g,
+      insertCode: /\[INSERT_CODE:\s*([^:]+):(\d+)\]\n([\s\S]*?)\[\/INSERT_CODE\]/g,
+      replaceCode: /\[REPLACE_CODE:\s*([^\]]+)\]\n\[FIND\]([\s\S]*?)\[\/FIND\]\n\[REPLACE\]([\s\S]*?)\[\/REPLACE\]\n\[\/REPLACE_CODE\]/g,
+      openEditor: /\[OPEN_EDITOR:\s*([^\]]+)\]/g,
+      formatFile: /\[FORMAT_FILE:\s*([^\]]+)\]/g,
+      gitCommand: /\[GIT_COMMAND:\s*([^\]]+)\]/g,
+      gitCommit: /\[GIT_COMMIT:\s*([^\]]+)\]/g,
+      runCommand: /\[RUN_COMMAND:\s*([^\]]+)\]/g
+    };
+
+    let match;
+    let executionResults: string[] = [];
 
     // Execute file creation tasks
-    let match;
-    while ((match = fileCreateRegex.exec(response)) !== null) {
+    while ((match = patterns.fileCreate.exec(response)) !== null) {
       const fileName = match[1].trim();
       const content = match[2].trim();
       await this.createFile(fileName, content);
+      executionResults.push(`Created file: ${fileName}`);
+    }
+
+    // Execute file editing tasks
+    while ((match = patterns.fileEdit.exec(response)) !== null) {
+      const fileName = match[1].trim();
+      const findText = match[2].trim();
+      const replaceText = match[3].trim();
+      await this.editFile(fileName, findText, replaceText);
+      executionResults.push(`Edited file: ${fileName}`);
+    }
+
+    // Execute file reading tasks
+    while ((match = patterns.readFile.exec(response)) !== null) {
+      const fileName = match[1].trim();
+      const content = await this.readFile(fileName);
+      executionResults.push(`Read file: ${fileName} (${content.length} characters)`);
+    }
+
+    // Execute grep searches
+    while ((match = patterns.grep.exec(response)) !== null) {
+      const pattern = match[1].trim();
+      const pathPattern = match[2].trim();
+      const results = await this.grepFiles(pattern, pathPattern);
+      executionResults.push(`Searched for "${pattern}" in ${pathPattern}: ${results.length} matches`);
+    }
+
+    // Execute find files
+    while ((match = patterns.findFiles.exec(response)) !== null) {
+      const filePattern = match[1].trim();
+      const files = await this.findFiles(filePattern);
+      executionResults.push(`Found ${files.length} files matching: ${filePattern}`);
+    }
+
+    // Execute delete files
+    while ((match = patterns.deleteFile.exec(response)) !== null) {
+      const fileName = match[1].trim();
+      await this.deleteFile(fileName);
+      executionResults.push(`Deleted file: ${fileName}`);
+    }
+
+    // Execute code insertion
+    while ((match = patterns.insertCode.exec(response)) !== null) {
+      const fileName = match[1].trim();
+      const lineNumber = parseInt(match[2].trim());
+      const code = match[3].trim();
+      await this.insertCodeAtLine(fileName, lineNumber, code);
+      executionResults.push(`Inserted code in ${fileName} at line ${lineNumber}`);
+    }
+
+    // Execute code replacement
+    while ((match = patterns.replaceCode.exec(response)) !== null) {
+      const fileName = match[1].trim();
+      const findCode = match[2].trim();
+      const replaceCode = match[3].trim();
+      await this.replaceCodeSection(fileName, findCode, replaceCode);
+      executionResults.push(`Replaced code section in ${fileName}`);
+    }
+
+    // Execute open editor
+    while ((match = patterns.openEditor.exec(response)) !== null) {
+      const fileName = match[1].trim();
+      await this.openInEditor(fileName);
+      executionResults.push(`Opened in editor: ${fileName}`);
+    }
+
+    // Execute file formatting
+    while ((match = patterns.formatFile.exec(response)) !== null) {
+      const fileName = match[1].trim();
+      await this.formatFile(fileName);
+      executionResults.push(`Formatted file: ${fileName}`);
     }
 
     // Execute git commands
-    while ((match = gitCommandRegex.exec(response)) !== null) {
+    while ((match = patterns.gitCommand.exec(response)) !== null) {
       const command = match[1].trim();
       await this.executeGitCommand(command);
+      executionResults.push(`Executed git: ${command}`);
     }
 
     // Execute git commits
-    while ((match = gitCommitRegex.exec(response)) !== null) {
+    while ((match = patterns.gitCommit.exec(response)) !== null) {
       const commitMessage = match[1].trim();
       await this.executeGitCommit(commitMessage);
+      executionResults.push(`Git commit: ${commitMessage}`);
     }
 
     // Execute shell commands
-    while ((match = runCommandRegex.exec(response)) !== null) {
+    while ((match = patterns.runCommand.exec(response)) !== null) {
       const command = match[1].trim();
       await this.executeShellCommand(command);
+      executionResults.push(`Executed command: ${command}`);
+    }
+
+    // Show summary of executed tasks
+    if (executionResults.length > 0) {
+      vscode.window.showInformationMessage(
+        `Agent executed ${executionResults.length} task(s):\n${executionResults.join('\n')}`
+      );
     }
   }
 
@@ -700,6 +822,410 @@ export class AgentService {
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to execute command: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  // Advanced file and code manipulation methods
+  private async editFile(fileName: string, findText: string, replaceText: string): Promise<void> {
+    try {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        throw new Error('No workspace folder open');
+      }
+
+      const filePath = path.join(workspaceFolder.uri.fsPath, fileName);
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`File not found: ${fileName}`);
+      }
+
+      let content = fs.readFileSync(filePath, 'utf8');
+      
+      // Perform find and replace
+      if (content.includes(findText)) {
+        content = content.replace(new RegExp(this.escapeRegExp(findText), 'g'), replaceText);
+        fs.writeFileSync(filePath, content, 'utf8');
+        vscode.window.showInformationMessage(`Updated file: ${fileName}`);
+      } else {
+        vscode.window.showWarningMessage(`Text not found in ${fileName}: "${findText.substring(0, 50)}..."`);
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to edit file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async readFile(fileName: string): Promise<string> {
+    try {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        throw new Error('No workspace folder open');
+      }
+
+      const filePath = path.join(workspaceFolder.uri.fsPath, fileName);
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`File not found: ${fileName}`);
+      }
+
+      return fs.readFileSync(filePath, 'utf8');
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return '';
+    }
+  }
+
+  private async grepFiles(pattern: string, pathPattern: string): Promise<Array<{file: string, line: number, content: string}>> {
+    try {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        throw new Error('No workspace folder open');
+      }
+
+      const results: Array<{file: string, line: number, content: string}> = [];
+      const glob = require('glob');
+      const searchPath = path.join(workspaceFolder.uri.fsPath, pathPattern);
+      
+      const files = glob.sync(searchPath, { nodir: true });
+      const regex = new RegExp(pattern, 'gi');
+
+      for (const filePath of files) {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const lines = content.split('\n');
+        
+        lines.forEach((line, index) => {
+          if (regex.test(line)) {
+            results.push({
+              file: path.relative(workspaceFolder.uri.fsPath, filePath),
+              line: index + 1,
+              content: line.trim()
+            });
+          }
+        });
+      }
+
+      // Show results in output channel
+      if (results.length > 0) {
+        const outputChannel = vscode.window.createOutputChannel(`Agent Search: ${pattern}`);
+        outputChannel.appendLine(`Found ${results.length} matches for "${pattern}" in ${pathPattern}:\n`);
+        results.forEach(result => {
+          outputChannel.appendLine(`${result.file}:${result.line}: ${result.content}`);
+        });
+        outputChannel.show();
+      }
+
+      return results;
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to search files: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return [];
+    }
+  }
+
+  private async findFiles(filePattern: string): Promise<string[]> {
+    try {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        throw new Error('No workspace folder open');
+      }
+
+      const glob = require('glob');
+      const searchPath = path.join(workspaceFolder.uri.fsPath, filePattern);
+      const files = glob.sync(searchPath, { nodir: true });
+      
+      const relativeFiles = files.map((file: string) => 
+        path.relative(workspaceFolder.uri.fsPath, file)
+      );
+
+      if (relativeFiles.length > 0) {
+        const outputChannel = vscode.window.createOutputChannel(`Agent Find: ${filePattern}`);
+        outputChannel.appendLine(`Found ${relativeFiles.length} files matching "${filePattern}":\n`);
+        relativeFiles.forEach((file: string) => outputChannel.appendLine(file));
+        outputChannel.show();
+      }
+
+      return relativeFiles;
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to find files: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return [];
+    }
+  }
+
+  private async deleteFile(fileName: string): Promise<void> {
+    try {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        throw new Error('No workspace folder open');
+      }
+
+      const filePath = path.join(workspaceFolder.uri.fsPath, fileName);
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`File not found: ${fileName}`);
+      }
+
+      fs.unlinkSync(filePath);
+      vscode.window.showInformationMessage(`Deleted file: ${fileName}`);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to delete file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async insertCodeAtLine(fileName: string, lineNumber: number, code: string): Promise<void> {
+    try {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        throw new Error('No workspace folder open');
+      }
+
+      const filePath = path.join(workspaceFolder.uri.fsPath, fileName);
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`File not found: ${fileName}`);
+      }
+
+      const content = fs.readFileSync(filePath, 'utf8');
+      const lines = content.split('\n');
+      
+      // Insert code at specified line (1-indexed)
+      lines.splice(lineNumber - 1, 0, code);
+      
+      fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
+      vscode.window.showInformationMessage(`Inserted code in ${fileName} at line ${lineNumber}`);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to insert code: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async replaceCodeSection(fileName: string, findCode: string, replaceCode: string): Promise<void> {
+    try {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        throw new Error('No workspace folder open');
+      }
+
+      const filePath = path.join(workspaceFolder.uri.fsPath, fileName);
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`File not found: ${fileName}`);
+      }
+
+      let content = fs.readFileSync(filePath, 'utf8');
+      
+      if (content.includes(findCode)) {
+        content = content.replace(findCode, replaceCode);
+        fs.writeFileSync(filePath, content, 'utf8');
+        vscode.window.showInformationMessage(`Replaced code section in ${fileName}`);
+      } else {
+        vscode.window.showWarningMessage(`Code section not found in ${fileName}`);
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to replace code: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async openInEditor(fileName: string): Promise<void> {
+    try {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        throw new Error('No workspace folder open');
+      }
+
+      const filePath = path.join(workspaceFolder.uri.fsPath, fileName);
+      const uri = vscode.Uri.file(filePath);
+      
+      await vscode.window.showTextDocument(uri);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to open file in editor: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async formatFile(fileName: string): Promise<void> {
+    try {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        throw new Error('No workspace folder open');
+      }
+
+      const filePath = path.join(workspaceFolder.uri.fsPath, fileName);
+      const uri = vscode.Uri.file(filePath);
+      
+      // Open document and format it
+      const document = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(document);
+      
+      // Execute format document command
+      await vscode.commands.executeCommand('editor.action.formatDocument');
+      
+      // Execute organize imports if available
+      try {
+        await vscode.commands.executeCommand('editor.action.organizeImports');
+      } catch {
+        // Organize imports might not be available for all file types
+      }
+      
+      vscode.window.showInformationMessage(`Formatted file: ${fileName}`);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to format file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private escapeRegExp(string: string): string {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  // Context window management methods
+  private estimateTokenCount(text: string): number {
+    // Rough estimation: ~4 characters per token for most models
+    return Math.ceil(text.length / 4);
+  }
+
+  private async manageContextWindow(memory: AgentMemory, maxTokens: number): Promise<void> {
+    const targetTokens = Math.floor(maxTokens * 0.7); // Use 70% of available tokens
+    const currentTokens = this.calculateCurrentTokenUsage(memory);
+    
+    if (currentTokens > targetTokens) {
+      await this.compressContext(memory, targetTokens);
+    }
+  }
+
+  private calculateCurrentTokenUsage(memory: AgentMemory): number {
+    let totalTokens = 0;
+    
+    // Count conversation tokens
+    memory.conversations.forEach(msg => {
+      totalTokens += this.estimateTokenCount(msg.content);
+    });
+    
+    // Count shared files tokens
+    memory.sharedFiles.forEach(filePath => {
+      try {
+        const content = fs.readFileSync(filePath, 'utf8');
+        totalTokens += this.estimateTokenCount(content);
+      } catch {
+        // File might not exist anymore
+      }
+    });
+    
+    // Count text snippets tokens
+    memory.textSnippets.forEach(snippet => {
+      totalTokens += this.estimateTokenCount(snippet.content);
+    });
+    
+    // Add context summary if it exists
+    if (memory.contextSummary) {
+      totalTokens += this.estimateTokenCount(memory.contextSummary);
+    }
+    
+    return totalTokens;
+  }
+
+  private async compressContext(memory: AgentMemory, targetTokens: number): Promise<void> {
+    console.log(`Compressing context for agent ${memory.agentId}, session ${memory.sessionCount + 1}`);
+    
+    // Step 1: Create summary of older conversations
+    const oldConversations = memory.conversations.slice(0, -5); // Keep last 5 conversations
+    const recentConversations = memory.conversations.slice(-5);
+    
+    if (oldConversations.length > 0) {
+      const summary = this.generateConversationSummary(oldConversations, memory);
+      memory.contextSummary = summary;
+      memory.conversations = recentConversations;
+      memory.sessionCount++;
+      memory.totalTokensUsed = this.calculateCurrentTokenUsage(memory);
+    }
+    
+    // Step 2: If still too large, trim shared files and snippets
+    if (this.calculateCurrentTokenUsage(memory) > targetTokens) {
+      // Keep only most recent files and snippets
+      memory.sharedFiles = memory.sharedFiles.slice(-3);
+      memory.textSnippets = memory.textSnippets.slice(-5);
+    }
+    
+    console.log(`Context compressed. New session: ${memory.sessionCount}, tokens: ${memory.totalTokensUsed}`);
+  }
+
+  private generateConversationSummary(conversations: AIMessage[], memory: AgentMemory): string {
+    const topics = new Set<string>();
+    const keyActions: string[] = [];
+    const userRequests: string[] = [];
+    
+    conversations.forEach(msg => {
+      if (msg.role === 'user') {
+        // Extract user requests and intentions
+        const content = msg.content.toLowerCase();
+        if (content.includes('create') || content.includes('make') || content.includes('build')) {
+          userRequests.push('creation tasks');
+        }
+        if (content.includes('fix') || content.includes('debug') || content.includes('error')) {
+          userRequests.push('bug fixing');
+        }
+        if (content.includes('explain') || content.includes('how') || content.includes('what')) {
+          userRequests.push('explanations');
+        }
+        if (content.includes('test') || content.includes('verify')) {
+          userRequests.push('testing');
+        }
+      } else {
+        // Extract actions taken by agent
+        if (msg.content.includes('[CREATE_FILE')) {
+          keyActions.push('created files');
+        }
+        if (msg.content.includes('[EDIT_FILE') || msg.content.includes('[REPLACE_CODE')) {
+          keyActions.push('modified code');
+        }
+        if (msg.content.includes('[RUN_COMMAND')) {
+          keyActions.push('executed commands');
+        }
+        if (msg.content.includes('[GIT_')) {
+          keyActions.push('git operations');
+        }
+      }
+      
+      // Extract topics from learning data
+      Object.keys(memory.learningData.commonTopics).forEach(topic => {
+        if (msg.content.toLowerCase().includes(topic)) {
+          topics.add(topic);
+        }
+      });
+    });
+    
+    const summary = `## Previous Session Summary (Session ${memory.sessionCount})
+
+**Discussion Topics**: ${Array.from(topics).join(', ') || 'general development'}
+**User Requests**: ${[...new Set(userRequests)].join(', ') || 'various tasks'}
+**Actions Performed**: ${[...new Set(keyActions)].join(', ') || 'consultations'}
+**Interaction Count**: ${conversations.length} exchanges
+
+**Key Context**: This agent has been working on ${Array.from(topics).join(' and ')} related tasks, with focus on ${userRequests[0] || 'development assistance'}. Previous session involved ${keyActions.length} types of actions.
+
+---
+
+*Continuing from previous session...*`;
+    
+    return summary;
+  }
+
+  private getOptimalConversationHistory(memory: AgentMemory, maxTokens: number): AIMessage[] {
+    const targetTokens = Math.floor(maxTokens * 0.3); // Use 30% for conversation history
+    let currentTokens = 0;
+    const history: AIMessage[] = [];
+    
+    // Add context summary first if it exists
+    const contextPrefix: AIMessage[] = [];
+    if (memory.contextSummary) {
+      contextPrefix.push({
+        role: 'assistant',
+        content: memory.contextSummary
+      });
+      currentTokens += this.estimateTokenCount(memory.contextSummary);
+    }
+    
+    // Add recent conversations (newest first, then reverse)
+    const conversations = [...memory.conversations].reverse();
+    
+    for (const msg of conversations) {
+      const msgTokens = this.estimateTokenCount(msg.content);
+      if (currentTokens + msgTokens > targetTokens && history.length > 0) {
+        break;
+      }
+      history.unshift(msg);
+      currentTokens += msgTokens;
+    }
+    
+    return [...contextPrefix, ...history];
   }
 
   public async getConversationHistory(agentId: string): Promise<AIMessage[]> {
