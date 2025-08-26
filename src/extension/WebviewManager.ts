@@ -11,7 +11,6 @@ export class WebviewManager {
   private contextProvider: ContextProvider;
   private agentService: AgentService;
   private panel: vscode.WebviewPanel | null = null;
-  private isDisposing = false;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -71,20 +70,8 @@ export class WebviewManager {
     // Handle panel disposal
     this.panel.onDidDispose(
       () => {
-        debugLogger.log('Webview panel disposed', { isDisposing: this.isDisposing });
+        debugLogger.log('Webview panel disposed');
         this.panel = null;
-        
-        // Only recreate the panel if we're not intentionally disposing it
-        if (!this.isDisposing) {
-          debugLogger.log('Panel disposed unexpectedly (likely due to reload), recreating');
-          // Use a small delay to ensure disposal is complete
-          setTimeout(() => {
-            debugLogger.log('Recreating panel after unexpected disposal');
-            this.showPanel();
-          }, 100);
-        } else {
-          debugLogger.log('Panel disposed intentionally, not recreating');
-        }
       },
       null,
       this.context.subscriptions
@@ -870,7 +857,6 @@ export class WebviewManager {
 
   public dispose(): void {
     if (this.panel) {
-      this.isDisposing = true;
       this.panel.dispose();
       this.panel = null;
     }
