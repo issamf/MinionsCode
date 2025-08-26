@@ -217,6 +217,31 @@ export class AvatarService {
     this.loadAvatars();
   }
 
+  public markAvatarInUse(agentId: string, avatarValue: string): void {
+    // If it's a file-based avatar, mark the file as in use
+    if (avatarValue.startsWith('avatar:')) {
+      const filename = avatarValue.replace('avatar:', '');
+      const avatarId = this.getAvatarIdFromFilename(filename);
+      const avatar = this.avatars.get(avatarId);
+      
+      if (avatar) {
+        avatar.inUse = true;
+        avatar.usedBy = agentId;
+        this.agentAvatars.set(agentId, avatarValue);
+        console.log(`Marked avatar file ${avatarId} as in use by agent ${agentId}`);
+      }
+    } else if (this.fallbackEmojis.includes(avatarValue)) {
+      // If it's a fallback emoji, mark it as used
+      this.usedFallbacks.add(avatarValue);
+      this.agentAvatars.set(agentId, avatarValue);
+      console.log(`Marked fallback emoji ${avatarValue} as in use by agent ${agentId}`);
+    } else {
+      // For other avatars (like random emojis), just track the assignment
+      this.agentAvatars.set(agentId, avatarValue);
+      console.log(`Marked avatar ${avatarValue} as in use by agent ${agentId}`);
+    }
+  }
+
   public getAvatarStats(): {
     total: number;
     available: number;

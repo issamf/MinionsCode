@@ -1,6 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AgentConfig } from '@/shared/types';
 
+interface Message {
+  id: string;
+  content: string;
+  isUser: boolean;
+  timestamp: Date;
+  agentName?: string;
+}
+
 interface QuickChatDialogProps {
   agents: AgentConfig[];
   initialContext?: string | null;
@@ -15,8 +23,10 @@ export const QuickChatDialog: React.FC<QuickChatDialogProps> = ({
   onSendMessage
 }) => {
   const [message, setMessage] = useState(initialContext || '');
-  const [selectedAgent, setSelectedAgent] = useState<string>('');
+  const [sharedConversation, setSharedConversation] = useState<Message[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const activeAgents = agents.filter(agent => agent.isActive);
 
@@ -31,12 +41,61 @@ export const QuickChatDialog: React.FC<QuickChatDialogProps> = ({
     }
   }, [initialContext]);
 
+  // Scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [sharedConversation]);
+
+  // Handle messages from extension
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const message = event.data;
+      
+      if (message.type === 'sharedChatResponse') {
+        const { response, done, agentName, timestamp } = message.data;
+        
+        if (done && response) {
+          // Add complete agent response to shared conversation
+          setSharedConversation(prev => [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              content: response,
+              isUser: false,
+              timestamp: new Date(timestamp),
+              agentName: agentName
+            }
+          ]);
+          setIsLoading(false);
+        } else if (!done && response) {
+          // Handle streaming responses (could update the last message or show typing)
+          setIsLoading(true);
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
   const handleSend = () => {
     if (!message.trim()) return;
     
+    // Add user message to shared conversation
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      content: message,
+      isUser: true,
+      timestamp: new Date()
+    };
+    
+    setSharedConversation(prev => [...prev, userMessage]);
+    
     // Check for @agent mentions
     const atMentionMatch = message.match(/@(\w+)/);
-    let targetAgent = selectedAgent;
+    let targetAgent: string | undefined = undefined;
     
     if (atMentionMatch) {
       const mentionedAgentName = atMentionMatch[1];
@@ -48,8 +107,10 @@ export const QuickChatDialog: React.FC<QuickChatDialogProps> = ({
       }
     }
     
-    onSendMessage(message, targetAgent || undefined);
-    onClose();
+    setMessage(''); // Clear input
+    setIsLoading(true);
+    onSendMessage(message, targetAgent);
+    // Don't close the dialog anymore - keep it open for conversation
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -93,6 +154,46 @@ export const QuickChatDialog: React.FC<QuickChatDialogProps> = ({
             </div>
           )}
           
+          <div className="shared-conversation">
+            <div className="conversation-header">
+              <h3>Shared Conversation</h3>
+              <span className="agent-count">{activeAgents.length} active agent{activeAgents.length !== 1 ? 's' : ''}</span>
+            </div>
+            
+            <div className="messages-container">
+              {sharedConversation.length === 0 ? (
+                <div className="no-messages">
+                  <p>Start a conversation with your agents using @mentions</p>
+                  <p>Try <code>@everyone Hello!</code> or <code>@AgentName What do you think?</code></p>
+                </div>
+              ) : (
+                <>
+                  {sharedConversation.map((msg) => (
+                    <div key={msg.id} className={`message ${msg.isUser ? 'user-message' : 'agent-message'}`}>
+                      <div className="message-content">
+                        {msg.content}
+                      </div>
+                      <div className="message-meta">
+                        {msg.agentName && <span className="agent-name">{msg.agentName}</span>}
+                        <span className="timestamp">
+                          {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {isLoading && (
+                    <div className="message agent-message loading">
+                      <div className="message-content">
+                        <span className="typing-indicator">Agent is thinking...</span>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </>
+              )}
+            </div>
+          </div>
+          
           <div className="agent-mentions">
             <div className="mentions-label">Quick mention:</div>
             <div className="mention-buttons">
@@ -123,24 +224,9 @@ export const QuickChatDialog: React.FC<QuickChatDialogProps> = ({
               onChange={(e) => setMessage(e.target.value)}
               onKeyDown={handleKeyPress}
               placeholder="Type your message... Use @agentname or @everyone to target specific agents. Ctrl+Enter to send."
-              rows={6}
+              rows={4}
               className="message-input"
             />
-          </div>
-
-          <div className="agent-selection">
-            <label>Send to specific agent (optional):</label>
-            <select
-              value={selectedAgent}
-              onChange={(e) => setSelectedAgent(e.target.value)}
-            >
-              <option value="">Let AI decide based on context</option>
-              {activeAgents.map(agent => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.avatar} {agent.name}
-                </option>
-              ))}
-            </select>
           </div>
         </div>
 

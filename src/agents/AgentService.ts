@@ -701,4 +701,9 @@ export class AgentService {
       vscode.window.showErrorMessage(`Failed to execute command: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
+
+  public async getConversationHistory(agentId: string): Promise<AIMessage[]> {
+    const memory = this.agentMemories.get(agentId);
+    return memory ? memory.conversations : [];
+  }
 }

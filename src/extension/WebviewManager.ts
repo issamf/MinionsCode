@@ -255,6 +255,10 @@ export class WebviewManager {
         // Clear any potential loading state in the webview and send fresh data
         await this.sendInitialData();
         break;
+
+      case 'getConversationHistory':
+        await this.handleGetConversationHistory(message.data);
+        break;
         
       case 'createAgent':
         await this.handleCreateAgent(message.data);
@@ -362,9 +366,12 @@ export class WebviewManager {
     try {
       const updatedAgent = await this.agentManager.updateAgent(data.agentId, data.updates);
       
+      // Process avatar for webview if needed
+      const processedAgent = this.processAgentAvatars(updatedAgent);
+      
       this.panel?.webview.postMessage({
         type: 'agentUpdated',
-        data: updatedAgent
+        data: processedAgent
       });
     } catch (error) {
       this.panel?.webview.postMessage({
@@ -378,49 +385,94 @@ export class WebviewManager {
   }
 
   private async handleSendMessage(data: { agentId: string; message: string; context?: any }): Promise<void> {
+    await this.sendMessageToAgent(data.agentId, data.message, 'privateChat');
+  }
+
+  private async sendMessageToAgent(
+    agentId: string, 
+    message: string, 
+    source: 'privateChat' | 'sharedChat'
+  ): Promise<void> {
     try {
-      const agent = this.agentManager.getAgent(data.agentId);
+      const agent = this.agentManager.getAgent(agentId);
       if (!agent) {
-        throw new Error(`Agent with id ${data.agentId} not found`);
+        throw new Error(`Agent with id ${agentId} not found`);
       }
 
       // Send initial response to show agent is thinking
       this.panel?.webview.postMessage({
         type: 'messageThinking',
         data: {
-          agentId: data.agentId,
-          thinking: true
+          agentId: agentId,
+          thinking: true,
+          source: source
         }
       });
 
       // Process message with AI service
       await this.agentService.processMessage(
         agent,
-        data.message,
+        message,
         (chunk: string, done: boolean) => {
+          const responseData = {
+            agentId: agentId,
+            response: chunk,
+            done: done,
+            timestamp: new Date().toISOString(),
+            source: source,
+            agentName: agent.name // Include agent name for shared chat prefixing
+          };
+
+          // Send to private chat (always)
           this.panel?.webview.postMessage({
             type: 'messageResponse',
-            data: {
-              agentId: data.agentId,
-              response: chunk,
-              done: done,
-              timestamp: new Date().toISOString()
-            }
+            data: responseData
           });
+
+          // If this originated from shared chat, also send to shared chat with agent name prefix
+          if (source === 'sharedChat') {
+            this.panel?.webview.postMessage({
+              type: 'sharedChatResponse',
+              data: {
+                ...responseData,
+                response: done && chunk ? `**${agent.name}**: ${chunk}` : chunk // Prefix completed responses
+              }
+            });
+          }
         }
       );
 
     } catch (error) {
-      console.error('Error in handleSendMessage:', error);
+      console.error('Error in sendMessageToAgent:', error);
+      const errorResponse = `I apologize, but I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}. Please check that your AI provider is configured correctly.`;
+      
+      // Send error to private chat
       this.panel?.webview.postMessage({
         type: 'messageResponse',
         data: {
-          agentId: data.agentId,
-          response: `I apologize, but I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}. Please check that your AI provider is configured correctly.`,
+          agentId: agentId,
+          response: errorResponse,
           done: true,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          source: source
         }
       });
+
+      // Also send to shared chat if needed
+      if (source === 'sharedChat') {
+        const agent = this.agentManager.getAgent(agentId);
+        this.panel?.webview.postMessage({
+          type: 'sharedChatResponse',
+          data: {
+            agentId: agentId,
+            response: `**${agent?.name || 'Agent'}**: ${errorResponse}`,
+            done: true,
+            timestamp: new Date().toISOString(),
+            source: source,
+            agentName: agent?.name || 'Agent'
+          }
+        });
+      }
     }
   }
 
@@ -764,6 +816,29 @@ export class WebviewManager {
     }
   }
 
+  private async handleGetConversationHistory(data: { agentId: string }): Promise<void> {
+    try {
+      const conversationHistory = await this.agentService.getConversationHistory(data.agentId);
+      
+      this.panel?.webview.postMessage({
+        type: 'conversationHistory',
+        data: {
+          agentId: data.agentId,
+          messages: conversationHistory
+        }
+      });
+    } catch (error) {
+      debugLogger.log('Error getting conversation history', { agentId: data.agentId, error });
+      this.panel?.webview.postMessage({
+        type: 'conversationHistory',
+        data: {
+          agentId: data.agentId,
+          messages: []
+        }
+      });
+    }
+  }
+
   private async handleQuickChatMessage(data: { message: string; targetAgent?: string }): Promise<void> {
     try {
       debugLogger.log('handleQuickChatMessage called', data);
@@ -822,17 +897,13 @@ export class WebviewManager {
       for (const agentId of targetAgents) {
         const agent = activeAgents.find(a => a.id === agentId);
         if (agent) {
-          // For now, just log the message. In the future, this would route to the agent's chat
           debugLogger.log('Routing message to agent', { 
             agentName: agent.name, 
             message: data.message 
           });
           
-          // TODO: Implement actual message routing to agent's private chat
-          // This would involve:
-          // 1. Opening/focusing the agent's chat window
-          // 2. Sending the message to the agent
-          // 3. Displaying the message in both shared and private chats
+          // 1. Send message to agent's private chat
+          await this.sendMessageToAgent(agentId, data.message, 'sharedChat');
         }
       }
       

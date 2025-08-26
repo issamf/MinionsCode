@@ -300,11 +300,10 @@ export class AgentManager {
       for (const agent of persistedAgents) {
         this.agents.set(agent.id, agent);
         
-        // Mark avatar as in use if it's a file-based avatar
-        if (agent.avatar && agent.avatar.startsWith('avatar:')) {
+        // Mark avatar as in use (for any avatar type)
+        if (agent.avatar) {
           try {
-            // Simulate allocation to mark the avatar as in use
-            this.avatarService.allocateAvatar(agent.id);
+            this.avatarService.markAvatarInUse(agent.id, agent.avatar);
             debugLogger.log('Marked persisted agent avatar as in use', { agentId: agent.id, avatar: agent.avatar });
           } catch (error) {
             debugLogger.log('Failed to mark persisted agent avatar as in use', { agentId: agent.id, avatar: agent.avatar, error });
