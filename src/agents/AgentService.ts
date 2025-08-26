@@ -70,6 +70,14 @@ export class AgentService {
 
       // Check if the message contains task requests
       const taskAnalysis = this.analyzeForTasks(userMessage, agent.type);
+      if (taskAnalysis.hasTasks) {
+        console.log('🤖 TASK DETECTION:', { 
+          message: userMessage, 
+          detectedTasks: taskAnalysis.tasks,
+          agentId: agent.id,
+          agentName: agent.name
+        });
+      }
       
       // Handle context window management
       await this.manageContextWindow(memory, agent.model.maxTokens);
@@ -92,6 +100,10 @@ export class AgentService {
       if (taskAnalysis.hasTasks) {
         const taskInstructions = this.getTaskInstructions(agent, taskAnalysis.tasks);
         messages[0].content += `\n\n${taskInstructions}`;
+        console.log('🤖 TASK INSTRUCTIONS ADDED:', {
+          agentId: agent.id,
+          taskInstructions: taskInstructions.substring(0, 200) + '...'
+        });
       }
 
       // Mark this stream as active
@@ -109,6 +121,12 @@ export class AgentService {
           onResponse(chunk.content, chunk.done);
           
           if (chunk.done) {
+            console.log('🤖 CHECKING RESPONSE FOR TASKS:', {
+              agentId: agent.id,
+              responseLength: chunk.content.length,
+              responsePreview: chunk.content.substring(0, 500) + '...'
+            });
+            
             // Execute any tasks found in the AI response (fire and forget to avoid blocking)
             this.executeTasksFromResponse(agent, chunk.content).catch(error => {
               console.error('Error executing tasks from response:', error);
@@ -586,7 +604,13 @@ export class AgentService {
 
   private analyzeForTasks(message: string, _agentType: string): { hasTasks: boolean; tasks: string[] } {
     const taskKeywords = {
-      file_operations: ['create file', 'write file', 'save to file', 'generate file'],
+      file_operations: [
+        'create file', 'write file', 'save to file', 'generate file', 'make file',
+        'create a file', 'write a file', 'save a file', 'make a file',
+        'create text', 'write text', 'save text', 'generate text',
+        'create .txt', 'write .js', 'make .py', 'save .md',
+        'new file', 'add file', 'build file'
+      ],
       git_operations: ['git commit', 'commit changes', 'push to git', 'create branch'],
       command_execution: ['run command', 'execute', 'npm install', 'npm run', 'docker'],
       code_analysis: ['analyze code', 'review code', 'check for bugs', 'lint code']
@@ -636,12 +660,30 @@ export class AgentService {
       instructions += '- Execute commands: `[RUN_COMMAND: npm install]`\n';
     }
 
-    instructions += '\n**Important**: I can perform these operations directly in the background. When you need file modifications, code changes, or project operations, I will execute them immediately rather than just providing instructions.';
+    instructions += `
+
+🚨 **CRITICAL - MUST USE TASK SYNTAX**: 
+When the user asks for file operations, CODE GENERATION, or commands, you MUST use the exact syntax above to perform the actual operations. 
+
+❌ DO NOT respond with instructions or simulated commands like "echo 'Hello' > file.txt"
+✅ DO use the task syntax: [CREATE_FILE: filename.ext]\\ncontent\\n[/CREATE_FILE]
+
+**Example - User says "create a file test.txt with Hello World":**
+❌ Wrong: "I'll create a file: \`echo "Hello World" > test.txt\`"
+✅ Correct: "[CREATE_FILE: test.txt]\\nHello World\\n[/CREATE_FILE]"
+
+I will execute these tasks automatically in the background. Use the syntax!`;
     
     return instructions;
   }
 
   private async executeTasksFromResponse(_agent: AgentConfig, response: string): Promise<void> {
+    console.log('🤖 EXECUTING TASKS FROM RESPONSE:', {
+      agentId: _agent.id,
+      responseLength: response.length,
+      responseSnippet: response.substring(0, 300)
+    });
+    
     // Parse all task commands from AI response
     const patterns = {
       fileCreate: /\[CREATE_FILE:\s*([^\]]+)\]\n([\s\S]*?)\[\/CREATE_FILE\]/g,
@@ -762,10 +804,18 @@ export class AgentService {
     }
 
     // Show summary of executed tasks
+    console.log('🤖 TASK EXECUTION COMPLETE:', {
+      agentId: _agent.id,
+      tasksFound: executionResults.length,
+      tasks: executionResults
+    });
+    
     if (executionResults.length > 0) {
       vscode.window.showInformationMessage(
         `Agent executed ${executionResults.length} task(s):\n${executionResults.join('\n')}`
       );
+    } else {
+      console.log('🤖 NO TASKS FOUND IN RESPONSE - Agent may have responded conversationally instead of using task syntax');
     }
   }
 
