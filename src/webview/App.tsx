@@ -48,23 +48,55 @@ export const App: React.FC = () => {
   console.log('=== AI AGENTS WEBVIEW LOADED ===');
   console.log('VSCode API available:', !!vscode);
 
-  // Handle messages from extension
+  // Handle window reload events and ensure proper reinitialization
   useEffect(() => {
-    // Send ready message to extension when webview loads
-    console.log('Webview loaded, sending ready message');
+    // Handle page visibility changes (when webview becomes visible again after reload)
+    const handleVisibilityChange = () => {
+      if (!document.hidden && state.loading) {
+        console.log('Webview became visible while loading, resending ready message');
+        webviewLogger.log('Visibility change detected, ensuring ready message is sent');
+        vscode.postMessage({ type: 'ready' });
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [state.loading, vscode]);
+
+  // Handle messages from extension and initial load
+  useEffect(() => {
+    // Send ready message to extension when webview loads/reloads
+    console.log('Webview initializing, sending ready message');
     console.log('VSCode API available:', !!vscode);
-    webviewLogger.log('Webview initializing', { hasVscodeApi: !!vscode });
+    webviewLogger.log('Webview initializing', { hasVscodeApi: !!vscode, timestamp: Date.now() });
     
-    // Test message to ensure communication works
-    console.log('Testing vscode.postMessage...');
-    try {
-      vscode.postMessage({ type: 'ready' });
-      console.log('Ready message sent successfully');
-      webviewLogger.log('Ready message sent to extension');
-    } catch (error) {
-      console.error('Failed to send ready message:', error);
-      webviewLogger.log('Failed to send ready message', error);
-    }
+    const sendReadyMessage = () => {
+      try {
+        vscode.postMessage({ type: 'ready' });
+        console.log('Ready message sent successfully');
+        webviewLogger.log('Ready message sent to extension');
+        return true;
+      } catch (error) {
+        console.error('Failed to send ready message:', error);
+        webviewLogger.log('Failed to send ready message', error);
+        return false;
+      }
+    };
+    
+    // Send ready message immediately and set up retry mechanism
+    let initReceived = false;
+    let retryCount = 0;
+    const maxRetries = 5;
+    
+    const sendWithRetry = () => {
+      if (sendReadyMessage() && !initReceived && retryCount < maxRetries) {
+        retryCount++;
+        console.log(`Ready message retry ${retryCount}/${maxRetries}`);
+        setTimeout(sendWithRetry, 500 * retryCount); // Exponential backoff
+      }
+    };
+    
+    sendWithRetry();
     
     const messageHandler = (event: MessageEvent) => {
       const message = event.data;
@@ -73,11 +105,17 @@ export const App: React.FC = () => {
 
       switch (message.type) {
         case 'init':
+          initReceived = true; // Mark that we received init response
           console.log('Received init message with agents:', message.data.agents);
+          webviewLogger.log('Init message received, updating state', {
+            agentCount: message.data.agents?.length || 0,
+            wasLoading: state.loading
+          });
           setState(prev => ({
             ...prev,
             agents: message.data.agents || [],
-            loading: false
+            loading: false,
+            errorMessage: null // Clear any errors on successful init
           }));
           break;
 
@@ -139,7 +177,7 @@ export const App: React.FC = () => {
     
     return () => {
       console.log('Removing message event listener');
-      webviewLogger.log('Removing message event listener from window');
+      webviewLogger.log('Cleaning up event listener');
       window.removeEventListener('message', messageHandler);
     };
   }, []);
@@ -248,8 +286,39 @@ export const App: React.FC = () => {
 
   const handleRefresh = useCallback(() => {
     webviewLogger.log('Manual refresh requested');
-    setState(prev => ({ ...prev, loading: true }));
-    vscode.postMessage({ type: 'ready' });
+    setState(prev => ({ 
+      ...prev, 
+      loading: true, 
+      errorMessage: null // Clear any existing errors on refresh
+    }));
+    
+    try {
+      vscode.postMessage({ type: 'ready' });
+      webviewLogger.log('Refresh ready message sent successfully');
+      
+      // Set a timeout to handle stuck loading state
+      setTimeout(() => {
+        setState(prevState => {
+          if (prevState.loading) {
+            webviewLogger.log('Refresh timeout reached, showing error');
+            return {
+              ...prevState,
+              loading: false,
+              errorMessage: 'Panel refresh timed out. Try using the refresh button again or reload the window.'
+            };
+          }
+          return prevState;
+        });
+      }, 5000); // 5 second timeout
+      
+    } catch (error) {
+      webviewLogger.log('Failed to send refresh ready message', error);
+      setState(prev => ({
+        ...prev,
+        loading: false,
+        errorMessage: 'Failed to refresh panel. Try reloading the window.'
+      }));
+    }
   }, [vscode]);
 
   const handleProviderConfigured = useCallback((_provider: AIProvider) => {
@@ -273,7 +342,7 @@ export const App: React.FC = () => {
     }));
   }, []);
 
-  const handleSendMessage = useCallback((message: string, targetAgent?: string) => {
+  const handleSendQuickChatMessage = useCallback((message: string, targetAgent?: string) => {
     webviewLogger.log('Sending quick chat message', { message, targetAgent });
     
     // For now, just log the message and close the dialog
@@ -320,8 +389,13 @@ export const App: React.FC = () => {
           <button className="btn btn-secondary" onClick={() => showGlobalSettings()}>
             ⚙️ Settings
           </button>
-          <button className="btn btn-secondary" onClick={handleRefresh}>
-            Refresh
+          <button 
+            className="btn btn-secondary" 
+            onClick={handleRefresh}
+            disabled={state.loading}
+            title="Refresh agent data from extension"
+          >
+            {state.loading ? '🔄 Loading...' : '🔄 Refresh'}
           </button>
         </div>
       </header>
@@ -386,7 +460,7 @@ export const App: React.FC = () => {
           agents={state.agents}
           initialContext={state.quickChatContext}
           onClose={closeQuickChat}
-          onSendMessage={handleSendMessage}
+          onSendMessage={handleSendQuickChatMessage}
         />
       )}
 

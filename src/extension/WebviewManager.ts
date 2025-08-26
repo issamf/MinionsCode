@@ -11,6 +11,7 @@ export class WebviewManager {
   private contextProvider: ContextProvider;
   private agentService: AgentService;
   private panel: vscode.WebviewPanel | null = null;
+  private isDisposing = false;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -70,7 +71,20 @@ export class WebviewManager {
     // Handle panel disposal
     this.panel.onDidDispose(
       () => {
+        debugLogger.log('Webview panel disposed', { isDisposing: this.isDisposing });
         this.panel = null;
+        
+        // Only recreate the panel if we're not intentionally disposing it
+        if (!this.isDisposing) {
+          debugLogger.log('Panel disposed unexpectedly (likely due to reload), recreating');
+          // Use a small delay to ensure disposal is complete
+          setTimeout(() => {
+            debugLogger.log('Recreating panel after unexpected disposal');
+            this.showPanel();
+          }, 100);
+        } else {
+          debugLogger.log('Panel disposed intentionally, not recreating');
+        }
       },
       null,
       this.context.subscriptions
@@ -177,6 +191,11 @@ export class WebviewManager {
       return;
     }
 
+    // Add delay to ensure webview is fully loaded after reload
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    debugLogger.log('sendInitialData: Starting data send process');
+
     try {
       const agents = this.agentManager.listAgents();
       const projectContext = await this.contextProvider.getProjectContext();
@@ -200,28 +219,38 @@ export class WebviewManager {
         processedAgents = agents;
       }
 
-      this.panel.webview.postMessage({
-        type: 'init',
-        data: {
-          agents: processedAgents,
-          projectContext,
-          settings: {
-            // Add relevant settings for the UI
+      if (this.panel) { // Double-check panel still exists
+        this.panel.webview.postMessage({
+          type: 'init',
+          data: {
+            agents: processedAgents,
+            projectContext,
+            settings: {
+              // Add relevant settings for the UI
+            }
           }
-        }
-      });
-      
-      debugLogger.log('sendInitialData: Initial data sent to webview successfully');
+        });
+        
+        debugLogger.log('sendInitialData: Initial data sent to webview successfully');
+      } else {
+        debugLogger.log('sendInitialData: Panel was disposed during data preparation');
+      }
     } catch (error) {
       debugLogger.log('ERROR in sendInitialData', error);
-      // Send error to webview if something goes wrong
-      this.panel.webview.postMessage({
-        type: 'error',
-        data: {
-          message: 'Failed to load panel data',
-          operation: 'sendInitialData'
+      // Send error to webview if something goes wrong and panel still exists
+      if (this.panel) {
+        try {
+          this.panel.webview.postMessage({
+            type: 'error',
+            data: {
+              message: 'Failed to load panel data',
+              operation: 'sendInitialData'
+            }
+          });
+        } catch (sendError) {
+          debugLogger.log('Failed to send error message to webview', sendError);
         }
-      });
+      }
     }
   }
 
@@ -230,7 +259,12 @@ export class WebviewManager {
     
     switch (message.type) {
       case 'ready':
-        debugLogger.log('Webview ready, sending initial data');
+        debugLogger.log('Webview ready event received, sending initial data');
+        debugLogger.log('Panel state', { 
+          panelExists: !!this.panel, 
+          panelVisible: this.panel?.visible, 
+          panelActive: this.panel?.active 
+        });
         // Clear any potential loading state in the webview and send fresh data
         await this.sendInitialData();
         break;
@@ -836,6 +870,7 @@ export class WebviewManager {
 
   public dispose(): void {
     if (this.panel) {
+      this.isDisposing = true;
       this.panel.dispose();
       this.panel = null;
     }
