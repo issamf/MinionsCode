@@ -1107,6 +1107,229 @@ Use the appropriate task syntax based on what you find.`;
     }
   }
 
+  public async showEvaluationDashboard(): Promise<void> {
+    // Create a separate panel for evaluation dashboard
+    const evaluationPanel = vscode.window.createWebviewPanel(
+      'aiAgentsEvaluation',
+      'AI Model Evaluation Dashboard',
+      vscode.ViewColumn.One,
+      {
+        enableScripts: true,
+        localResourceRoots: [
+          vscode.Uri.joinPath(this.context.extensionUri, 'out'),
+          vscode.Uri.joinPath(this.context.extensionUri, 'resources')
+        ]
+      }
+    );
+
+    // Set up the webview content for evaluation dashboard
+    evaluationPanel.webview.html = this.getEvaluationDashboardHTML(evaluationPanel.webview);
+
+    // Handle messages from evaluation dashboard
+    evaluationPanel.webview.onDidReceiveMessage(
+      async (message) => {
+        try {
+          switch (message.type) {
+            case 'startEvaluation':
+              await this.handleStartEvaluation(message.data, evaluationPanel);
+              break;
+            case 'stopEvaluation':
+              await this.handleStopEvaluation(evaluationPanel);
+              break;
+            case 'resumeEvaluation':
+              await this.handleResumeEvaluation(message.data.sessionId, evaluationPanel);
+              break;
+            case 'getAvailableModels':
+              await this.handleGetEvaluationModels(evaluationPanel);
+              break;
+            case 'getAvailableScenarios':
+              await this.handleGetEvaluationScenarios(evaluationPanel);
+              break;
+            case 'getAvailableSessions':
+              await this.handleGetEvaluationSessions(evaluationPanel);
+              break;
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          evaluationPanel.webview.postMessage({
+            type: 'error',
+            data: { message: errorMessage }
+          });
+        }
+      },
+      undefined,
+      this.context.subscriptions
+    );
+
+    // Initialize dashboard with available data
+    await this.initializeEvaluationDashboard(evaluationPanel);
+  }
+
+  private getEvaluationDashboardHTML(webview: vscode.Webview): string {
+    // Get the local path to main script run in the webview
+    const scriptPathOnDisk = vscode.Uri.joinPath(this.context.extensionUri, 'out', 'webview', 'evaluation.js');
+    const scriptUri = webview.asWebviewUri(scriptPathOnDisk);
+    
+    const stylePathOnDisk = vscode.Uri.joinPath(this.context.extensionUri, 'out', 'webview', 'styles.css');
+    const styleUri = webview.asWebviewUri(stylePathOnDisk);
+
+    return `<!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link href="${styleUri}" rel="stylesheet">
+        <title>AI Model Evaluation Dashboard</title>
+        <style>
+          body {
+            padding: 0;
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--vscode-editor-background);
+            color: var(--vscode-editor-foreground);
+          }
+          
+          .evaluation-container {
+            width: 100%;
+            height: 100vh;
+            overflow: auto;
+          }
+
+          .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-size: 18px;
+            color: var(--vscode-descriptionForeground);
+          }
+
+          .error {
+            padding: 20px;
+            background-color: var(--vscode-inputValidation-errorBackground);
+            color: var(--vscode-inputValidation-errorForeground);
+            border: 1px solid var(--vscode-inputValidation-errorBorder);
+            border-radius: 4px;
+            margin: 20px;
+          }
+        </style>
+    </head>
+    <body>
+        <div id="evaluation-dashboard" class="evaluation-container">
+          <div class="loading">
+            <div>🤖 Loading AI Model Evaluation Dashboard...</div>
+          </div>
+        </div>
+        <script src="${scriptUri}"></script>
+    </body>
+    </html>`;
+  }
+
+  private async initializeEvaluationDashboard(panel: vscode.WebviewPanel): Promise<void> {
+    try {
+      // Send initial data to dashboard
+      panel.webview.postMessage({
+        type: 'initialize',
+        data: {
+          ready: true
+        }
+      });
+    } catch (error) {
+      console.error('Failed to initialize evaluation dashboard:', error);
+    }
+  }
+
+  private async handleStartEvaluation(_data: any, panel: vscode.WebviewPanel): Promise<void> {
+    // Implementation will be added when we integrate the EnhancedModelEvaluationRunner
+    panel.webview.postMessage({
+      type: 'evaluationStarted',
+      data: { message: 'Evaluation system integration in progress...' }
+    });
+  }
+
+  private async handleStopEvaluation(panel: vscode.WebviewPanel): Promise<void> {
+    panel.webview.postMessage({
+      type: 'evaluationStopped',
+      data: { message: 'Stop functionality will be implemented with runner integration' }
+    });
+  }
+
+  private async handleResumeEvaluation(sessionId: string, panel: vscode.WebviewPanel): Promise<void> {
+    panel.webview.postMessage({
+      type: 'evaluationResumed',
+      data: { sessionId, message: 'Resume functionality will be implemented with runner integration' }
+    });
+  }
+
+  private async handleGetEvaluationModels(panel: vscode.WebviewPanel): Promise<void> {
+    try {
+      // For now, return mock data - will be replaced with actual model discovery
+      const mockModels = [
+        { id: 'deepseek-coder:6.7b', name: 'DeepSeek Coder 6.7B', type: 'local', specialization: 'coding' },
+        { id: 'llama3.2:3b', name: 'Llama 3.2 3B', type: 'local', specialization: 'general' },
+        { id: 'codellama:7b', name: 'Code Llama 7B', type: 'local', specialization: 'coding' },
+      ];
+      
+      panel.webview.postMessage({
+        type: 'availableModels',
+        data: mockModels
+      });
+    } catch (error) {
+      panel.webview.postMessage({
+        type: 'error',
+        data: { message: `Failed to get models: ${error instanceof Error ? error.message : String(error)}` }
+      });
+    }
+  }
+
+  private async handleGetEvaluationScenarios(panel: vscode.WebviewPanel): Promise<void> {
+    try {
+      // For now, return mock data - will be replaced with actual scenario service
+      const mockScenarios = [
+        { id: 'code-review', name: 'Code Review', agentType: 'CODE_REVIEWER', conversation: [{ role: 'user', message: 'Review this code' }] },
+        { id: 'documentation', name: 'Documentation Writing', agentType: 'DOCUMENTATION', conversation: [{ role: 'user', message: 'Write documentation' }] },
+        { id: 'debugging', name: 'Bug Fix', agentType: 'SOFTWARE_ENGINEER', conversation: [{ role: 'user', message: 'Fix this bug' }] },
+      ];
+      
+      panel.webview.postMessage({
+        type: 'availableScenarios',
+        data: mockScenarios
+      });
+    } catch (error) {
+      panel.webview.postMessage({
+        type: 'error',
+        data: { message: `Failed to get scenarios: ${error instanceof Error ? error.message : String(error)}` }
+      });
+    }
+  }
+
+  private async handleGetEvaluationSessions(panel: vscode.WebviewPanel): Promise<void> {
+    try {
+      // For now, return mock data - will be replaced with actual persistence service
+      const mockSessions = [
+        {
+          sessionId: 'eval_123456',
+          startTime: new Date(Date.now() - 3600000),
+          lastUpdateTime: new Date(Date.now() - 1800000),
+          status: 'paused',
+          totalModels: 5,
+          completedModels: 2,
+          canResume: true
+        }
+      ];
+      
+      panel.webview.postMessage({
+        type: 'availableSessions',
+        data: mockSessions
+      });
+    } catch (error) {
+      panel.webview.postMessage({
+        type: 'error',
+        data: { message: `Failed to get sessions: ${error instanceof Error ? error.message : String(error)}` }
+      });
+    }
+  }
+
   public dispose(): void {
     if (this.panel) {
       this.panel.dispose();

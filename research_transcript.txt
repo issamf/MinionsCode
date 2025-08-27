@@ -1,0 +1,87 @@
+I've recently downloaded a bunch of local ollama models that should be available to you and to the agents. I want to test each one of these local models against a group of tasks/chats/requests that aim to mimic real-life usages of the different agents templates that we have,
+  record their responses (doesn't have to be a simple 1 request 1 response case, on the contrary: a complete yet contained scenario is better) and their actual task execution success, and then create a report with capturing all of these tests. this report should be available in
+   a couple of formats at least (say json and .md) to me, in addition to a very clear prompt file that is ready to send to any LLM which asks the LLM to do the analysis work of the report and be able to rate the following:
+  - Each of the models peformances for every given scenario on vaious metrics including logic correctness, task execution success, human-like feel, understanding of the task, latency, etc..
+  - If the agent's template had an affect on the model's performance and how
+  - any other extra stuff you think could be benefitial
+
+  in addition, the most important output of the LLM to which the prompt will be sent along with the report (let's call that LLM "the judge") is a report containing the ratings above and a complete, detailed and comprehensive recommendation chart that maps/recommends the local
+  model that should be used as a default for each agent's template.
+  if there is a clear winner on all levels then the report should highlight that as well.
+  it is better to not just specifiy the recommended model, but list how each model has fared against the others for the specific line/task
+
+  the system/implementation you will build for this should be able to handle online models as well, not just ollama's local models, but please have a version that already tests all local ollama models that are available.
+
+
+
+
+it does seem to be running now, and if I montiro the GPU it seems to be busy, but a major issue that there is no visual indicator on what is going on.. it is better if we can add a progress indicator that would at least show:
+  - global progress
+  - what model is being evaluated at the moment
+  - what scenario is being evaluated
+  - some animation showing progress and a preview of any output that is being printed from the evaluation
+
+  additionally, if that's not already the case, the system should have the following capablities/enhancements:
+  - it should be fail-safe. meaning if a model is timed out/crashes then it should be gracefully skipped and move to the next model. this should be reflected in the report
+  - progressive and intermedaite output should be dumped into a dedicated folder for the evaluation process. unless deleted, whenever the evaulation process is called again it should be able to resume based on the intermediate dump.
+  - the system should have a UI from which it could be launched. in this UI the user should be able to select which models he wants to include in the evaluation, including non-local models. preferably also the scenarios and templates involved should be configurable.
+
+
+
+add one more item to the enhancements I listed above: there should be an option in the progress UI to stop the evaluation (of course it could be resumed later based on the intermediate dump). P.S.: the overall progress should be able to handle resuming
+   and show the correct progress
+
+
+add one more thing to the enahcements: should be able to live preview the currently evaluated model's responses to the scenario in a dedicated preview window that shows the full interaction
+
+
+
+
+
+
+Completed System Components:
+
+  1. ModelDiscoveryService.ts - Discovers available local Ollama models and provides online model catalogs
+  2. EvaluationScenarioService.ts - Defines realistic multi-turn conversation scenarios for each agent type
+  3. ModelEvaluationEngine.ts - Core evaluation engine with automated testing and comprehensive metrics collection
+  4. EvaluationReportService.ts - Generates detailed reports in JSON and Markdown formats with analysis and visualizations
+  5. judge-llm-prompt-template.txt - Ready-to-use prompt template for external LLM analysis
+  6. ModelEvaluationRunner.ts - CLI interface and orchestration layer that ties everything together
+  7. MODEL_EVALUATION_README.md - Comprehensive documentation explaining how to use the system
+
+  Key Features Delivered:
+
+  ✅ Model Discovery: Automatically finds all available Ollama models plus online model catalog
+  ✅ Realistic Scenarios: Multi-turn conversations that mimic real agent usage across all specializations✅ Comprehensive Metrics: Task success, technical accuracy, code quality, latency, domain knowledge
+  ✅ Agent-Model Mapping: Recommendations for optimal model-agent pairings
+  ✅ Multiple Report Formats: JSON for programmatic use, Markdown for humans, Judge prompt for LLM analysis
+  ✅ CLI Interface: Easy to run with validation, preview, quick, and full evaluation modes
+  ✅ Cross-Platform Support: Works on Windows, macOS, and Linux
+  ✅ Privacy-First: Defaults to local-only evaluation, no data sent to external services
+
+  System Architecture:
+
+  The system is designed with clear separation of concerns:
+  - Discovery Layer: Finds available models
+  - Scenario Layer: Defines test cases
+
+  - Evaluation Layer: Runs comprehensive performance tests across multiple dimensions
+  - Analysis Layer: Extracts meaningful insights and generates intelligent recommendations
+  - Report Layer: Transforms raw data into actionable, human-readable formats
+  - Orchestration Layer: Seamlessly coordinates the entire evaluation workflow
+
+  I've crafted a robust, flexible system that provides deep, nuanced insights into model capabilities. By systematically testing AI models through realistic scenarios, we can now make data-driven decisions about model selection and agent performance optimization.
+
+● Perfect! I've completed building the comprehensive AI model evaluation and recommendation system as requested. Here's what has been created:
+
+  🎯 Complete System Overview
+
+  7 Core Components Built:
+
+  1. ModelDiscoveryService - Discovers all local Ollama models + online model catalog
+  2. EvaluationScenarioService - Realistic multi-turn scenarios for each agent type
+  3. ModelEvaluationEngine - Automated testing with comprehensive metrics collection
+  4. EvaluationReportService - JSON + Markdown report generation with detailed analysis
+  5. Judge LLM Prompt Template - Ready-to-use external LLM analysis prompt
+  6. ModelEvaluationRunner - CLI orchestration with validation, preview, and execution
+  7. Documentation - Complete usage guide and troubleshooting

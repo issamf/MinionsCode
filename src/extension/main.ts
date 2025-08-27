@@ -70,6 +70,19 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  const showEvaluationDashboardCommand = vscode.commands.registerCommand(
+    'aiAgents.showEvaluationDashboard',
+    async () => {
+      try {
+        // Show evaluation dashboard in webview
+        await webviewManager.showEvaluationDashboard();
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        vscode.window.showErrorMessage(`Failed to open evaluation dashboard: ${errorMessage}`);
+      }
+    }
+  );
+
   const runModelEvaluationCommand = vscode.commands.registerCommand(
     'aiAgents.runModelEvaluation',
     async () => {
@@ -148,6 +161,7 @@ export function activate(context: vscode.ExtensionContext) {
     quickChatCommand,
     sendToAgentCommand,
     sendSelectionToAgentCommand,
+    showEvaluationDashboardCommand,
     runModelEvaluationCommand
   );
 

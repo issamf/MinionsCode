@@ -51,8 +51,13 @@
         "category": "AI Agents"
       },
       {
+        "command": "aiAgents.showEvaluationDashboard",
+        "title": "Show Evaluation Dashboard",
+        "category": "AI Agents"
+      },
+      {
         "command": "aiAgents.runModelEvaluation",
-        "title": "Run Model Evaluation",
+        "title": "Run Model Evaluation (Legacy)",
         "category": "AI Agents"
       }
     ],

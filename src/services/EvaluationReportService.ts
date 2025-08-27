@@ -903,4 +903,101 @@ export class EvaluationReportService {
     
     return analysis;
   }
+
+  /**
+   * Generate a comprehensive prompt for judge LLMs to analyze evaluation results
+   */
+  async generateJudgeLLMPrompt(report: ComprehensiveReport): Promise<string> {
+    const timestamp = new Date().toISOString();
+    const filename = `judge_llm_analysis_prompt_${timestamp.replace(/[:.]/g, '-')}.txt`;
+    const filepath = path.join(this.config.outputDirectory, filename);
+
+    const prompt = `# AI Model Evaluation Analysis Prompt
+
+You are an expert AI model evaluator tasked with analyzing the following comprehensive evaluation results. Please provide detailed insights and recommendations based on the data presented.
+
+## Evaluation Overview
+- **Total Models Evaluated**: ${report.metadata.totalModelsEvaluated}
+- **Total Scenarios**: ${report.metadata.totalScenariosRun}
+- **Evaluation Date**: ${new Date(report.metadata.generatedAt).toLocaleDateString()}
+- **Evaluation Duration**: ${(report.metadata.evaluationDuration / 1000 / 60).toFixed(1)} minutes
+
+## Model Rankings
+${report.modelComparisons.overall.map((model: any, index: number) => 
+  `${index + 1}. **${model.modelName}** (Score: ${model.overallScore.toFixed(2)})
+   - Success Rate: ${(model.successRate * 100).toFixed(1)}%
+   - Avg Response Time: ${model.avgResponseTime.toFixed(0)}ms
+   - Strengths: ${model.strengths.join(', ')}
+   - Weaknesses: ${model.weaknesses.join(', ')}`
+).join('\n\n')}
+
+## Agent Type Recommendations
+${report.agentTypeRecommendations.map((rec: any) => 
+  `### ${rec.agentType}
+   - **Top Recommended Models**: ${rec.recommendedModels.slice(0, 3).map((m: any) => m.modelName).join(', ')}
+   - **Key Metrics**: ${rec.keyMetrics.join(', ')}
+   - **Reasoning**: ${rec.reasoning}`
+).join('\n\n')}
+
+## Technical Insights
+- **Model Size vs Performance**: ${report.technicalInsights.modelSizeVsPerformance}
+- **Specialization Effect**: ${report.technicalInsights.specializationEffect}
+- **Latency Analysis**: ${report.technicalInsights.latencyAnalysis}
+- **Quality Factors**: ${report.technicalInsights.qualityFactors.join(', ')}
+
+## Analysis Task
+Please analyze these results and provide:
+
+1. **Overall Assessment**: What are the key findings from this evaluation?
+
+2. **Model Selection Guidance**: For each use case below, which model would you recommend and why?
+   - General purpose coding assistant
+   - Code review and quality analysis
+   - Documentation generation
+   - DevOps and deployment tasks
+   - Testing and quality assurance
+
+3. **Performance Insights**: 
+   - Which models show the best balance between quality and speed?
+   - Are there any surprising performance patterns?
+   - What factors seem to correlate most strongly with success?
+
+4. **Improvement Recommendations**:
+   - What areas need attention for underperforming models?
+   - Are there evaluation scenarios that reveal important model capabilities?
+   - What additional metrics would be valuable for future evaluations?
+
+5. **Strategic Recommendations**:
+   - For a development team, which 2-3 models would provide the best coverage?
+   - What are the cost vs. performance trade-offs?
+   - How should model selection vary based on team size, project type, or budget constraints?
+
+Please provide detailed, actionable insights based on the evaluation data presented above.
+
+## Output Format Requirements
+
+Please provide your analysis in **TWO formats**:
+
+### 1. Markdown Format (.md)
+- Use proper Markdown formatting with headers, lists, and emphasis
+- Include tables where appropriate for comparative data
+- Use code blocks for any technical examples
+- Structure with clear section headers matching the analysis tasks above
+
+### 2. HTML Format (.html)
+- Create a comprehensive, well-formatted HTML document
+- Include proper styling with CSS (embedded or inline)
+- Use professional color scheme and typography
+- Include interactive elements where beneficial (collapsible sections, hover effects, etc.)
+- Add charts or graphs using HTML/CSS/JavaScript if data warrants visualization
+- Ensure responsive design for different screen sizes
+- Include a table of contents with anchor links
+- Use proper semantic HTML structure
+
+Both formats should contain the same analytical content but be optimized for their respective presentation mediums. The HTML version should be publication-ready and suitable for sharing with stakeholders.
+`;
+
+    fs.writeFileSync(filepath, prompt, 'utf8');
+    return filepath;
+  }
 }
