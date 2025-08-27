@@ -385,6 +385,9 @@ export class AgentService {
   private enhanceSystemPromptWithBehaviors(agent: AgentConfig, memory: AgentMemory, userMessage: string): string {
     let enhancedPrompt = agent.systemPrompt;
     
+    // CRITICAL: Always add autonomous action emphasis
+    enhancedPrompt += `\n\n🚨 AUTONOMOUS ACTION MODE: You are an autonomous agent. When users request file operations, code changes, or development tasks, you must EXECUTE them directly using the provided task syntax. Never provide shell commands or instructions - use the task execution system!`;
+    
     // Add learning-based context
     if (memory.learningData.interactionCount > 5) {
       enhancedPrompt += this.generateLearningContext(memory);
@@ -609,7 +612,12 @@ export class AgentService {
         'create a file', 'write a file', 'save a file', 'make a file',
         'create text', 'write text', 'save text', 'generate text',
         'create .txt', 'write .js', 'make .py', 'save .md',
-        'new file', 'add file', 'build file'
+        'new file', 'add file', 'build file',
+        'edit file', 'modify file', 'change file', 'update file',
+        'edit the file', 'modify the file', 'change the file', 'update the file',
+        'change content', 'update content', 'modify content', 'edit content',
+        'change the content', 'update the content', 'modify the content',
+        'replace content', 'replace text', 'find and replace'
       ],
       git_operations: ['git commit', 'commit changes', 'push to git', 'create branch'],
       command_execution: ['run command', 'execute', 'npm install', 'npm run', 'docker'],
@@ -662,17 +670,29 @@ export class AgentService {
 
     instructions += `
 
-🚨 **CRITICAL - MUST USE TASK SYNTAX**: 
-When the user asks for file operations, CODE GENERATION, or commands, you MUST use the exact syntax above to perform the actual operations. 
+🚨 **CRITICAL - MANDATORY TASK EXECUTION**: 
+For ALL file operations, code changes, or development tasks, you MUST use the provided task syntax.
+
+🚨 **NEVER use shell commands, simulated outputs, or explanations instead of execution!** 
 
 ❌ DO NOT respond with instructions or simulated commands like "echo 'Hello' > file.txt"
 ✅ DO use the task syntax: [CREATE_FILE: filename.ext]\\ncontent\\n[/CREATE_FILE]
 
-**Example - User says "create a file test.txt with Hello World":**
-❌ Wrong: "I'll create a file: \`echo "Hello World" > test.txt\`"
-✅ Correct: "[CREATE_FILE: test.txt]\\nHello World\\n[/CREATE_FILE]"
+**Critical Examples:**
 
-I will execute these tasks automatically in the background. Use the syntax!`;
+**File Creation:** "create a file test.txt with Hello World"
+✅ Correct: \`[CREATE_FILE: test.txt]\\nHello World\\n[/CREATE_FILE]\`
+❌ Wrong: "I'll create a file: \`echo "Hello World" > test.txt\`"
+
+**File Editing:** "change the contents of test.txt to second try"
+✅ Correct: \`[EDIT_FILE: test.txt]\\n[FIND]Hello World[/FIND]\\n[REPLACE]second try[/REPLACE]\\n[/EDIT_FILE]\`
+❌ Wrong: \`echo "second try" > test.txt\` or \`[UPDATE_FILE: test.txt]\`
+
+**File Updates:** "update the file to contain new content"
+✅ Correct: Use EDIT_FILE syntax above
+❌ Wrong: Any shell commands or non-existent syntax
+
+I WILL EXECUTE these tasks automatically. ALWAYS use the exact syntax above!`;
     
     return instructions;
   }
