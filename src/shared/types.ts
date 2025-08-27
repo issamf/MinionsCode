@@ -21,6 +21,7 @@ export enum AgentType {
   DOCUMENTATION = 'documentation',
   DEVOPS = 'devops',
   TESTING = 'testing',
+  SOFTWARE_ENGINEER = 'software_engineer',
   CUSTOM = 'custom'
 }
 
@@ -245,6 +246,46 @@ export interface ExtensionSettings {
   dataRetentionDays: number;
   requireConfirmation: boolean;
   allowTelemetry: boolean;
+  helperBrain: HelperBrainSettings;
+}
+
+// Helper Brain Configuration
+export interface HelperBrainSettings {
+  enabled: boolean;
+  provider: AIProvider;
+  modelName: string;
+  temperature: number;
+  maxTokens: number;
+  systemPrompt: string;
+  useAgentProvider: boolean; // If true, uses the agent's own provider
+}
+
+// Dynamic Intent Classification
+export interface IntentDeclaration {
+  id: string;
+  name: string;
+  description: string;
+  staticKeywords: string[];
+  dynamicKeywords: string[];
+  examples: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IntentClassificationResult {
+  detectedIntents: string[];
+  confidence: number;
+  suggestedKeywords: string[];
+  reasoning: string;
+}
+
+export interface KeywordLearningEntry {
+  keyword: string;
+  intentId: string;
+  confidence: number;
+  source: 'ai_suggestion' | 'user_input' | 'pattern_match';
+  createdAt: Date;
+  usageCount: number;
 }
 
 // Events

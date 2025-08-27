@@ -393,6 +393,27 @@ export class WebviewManager {
     message: string, 
     source: 'privateChat' | 'sharedChat'
   ): Promise<void> {
+    // 🚨 WEBVIEW LOOP DETECTION: Check if we're already sending to this agent
+    const sendingKey = `webview-${agentId}-${source}`;
+    if ((this as any)[sendingKey]) {
+      debugLogger.log('🚨 WEBVIEW LOOP DETECTED: Already sending message to agent!', {
+        agentId,
+        source,
+        messagePreview: message.substring(0, 100)
+      });
+      return;
+    }
+
+    // Mark as sending
+    (this as any)[sendingKey] = true;
+    debugLogger.log('🔄 WEBVIEW SENDING MESSAGE:', {
+      agentId,
+      source,
+      messageLength: message.length,
+      messagePreview: message.substring(0, 150),
+      timestamp: new Date().toISOString()
+    });
+
     try {
       const agent = this.agentManager.getAgent(agentId);
       if (!agent) {
@@ -409,11 +430,62 @@ export class WebviewManager {
         }
       });
 
+      // Track streaming to detect infinite loops
+      let chunkCount = 0;
+      let lastChunk = '';
+      let duplicateChunkCount = 0;
+      let accumulatedResponse = ''; // Track full response for task execution
+      const MAX_CHUNKS = 1000;
+      const MAX_DUPLICATE_CHUNKS = 10;
+
       // Process message with AI service
       await this.agentService.processMessage(
         agent,
         message,
         (chunk: string, done: boolean) => {
+          chunkCount++;
+          accumulatedResponse += chunk; // Accumulate response for task execution
+          
+          // Debug logging for loop detection
+          debugLogger.log('Streaming chunk received', { 
+            agentId, 
+            chunkCount, 
+            chunkLength: chunk.length, 
+            done,
+            chunkPreview: chunk.substring(0, 50) + (chunk.length > 50 ? '...' : '')
+          });
+
+          // Check for runaway streaming
+          if (chunkCount > MAX_CHUNKS) {
+            debugLogger.log('🚨 EMERGENCY STOP: Excessive chunks detected', { 
+              agentId, 
+              chunkCount, 
+              maxChunks: MAX_CHUNKS 
+            });
+            return; // Stop processing
+          }
+
+          // Check for duplicate chunks (possible loop)
+          if (chunk === lastChunk && chunk.length > 0) {
+            duplicateChunkCount++;
+            debugLogger.log('⚠️ Duplicate chunk detected', { 
+              agentId, 
+              duplicateCount: duplicateChunkCount, 
+              chunkPreview: chunk.substring(0, 50) + (chunk.length > 50 ? '...' : '')
+            });
+            
+            if (duplicateChunkCount > MAX_DUPLICATE_CHUNKS) {
+              debugLogger.log('🚨 EMERGENCY STOP: Too many duplicate chunks', { 
+                agentId, 
+                duplicateCount: duplicateChunkCount 
+              });
+              return; // Stop processing
+            }
+          } else {
+            duplicateChunkCount = 0; // Reset counter if chunk is different
+          }
+          lastChunk = chunk;
+
           const responseData = {
             agentId: agentId,
             response: chunk,
@@ -437,6 +509,38 @@ export class WebviewManager {
                 ...responseData,
                 response: done && chunk ? `**${agent.name}**: ${chunk}` : chunk // Prefix completed responses
               }
+            });
+          }
+
+          // Log completion and trigger task execution
+          if (done) {
+            debugLogger.log('Streaming completed', { 
+              agentId, 
+              totalChunks: chunkCount, 
+              finalChunkLength: chunk.length,
+              accumulatedResponseLength: accumulatedResponse.length
+            });
+            
+            // CRITICAL FIX: Execute tasks from the complete accumulated response
+            debugLogger.log('WebviewManager: About to trigger task execution', {
+              agentId,
+              responseLength: accumulatedResponse.length,
+              responsePreview: accumulatedResponse.substring(0, 200) + '...'
+            });
+            
+            // Post-process response to convert display text to task syntax if needed
+            const processedResponse = this.postProcessResponseForTasks(accumulatedResponse, message);
+            
+            debugLogger.log('WebviewManager: About to call executeTasksFromResponse', {
+              agentId,
+              originalResponseLength: accumulatedResponse.length,
+              processedResponseLength: processedResponse.length,
+              processedResponsePreview: processedResponse.substring(0, 300) + '...'
+            });
+            
+            // Execute tasks from the processed response
+            this.agentService.executeTasksFromResponse(agent, processedResponse).catch(error => {
+              debugLogger.log('WebviewManager: Task execution failed', { agentId, error });
             });
           }
         }
@@ -473,7 +577,84 @@ export class WebviewManager {
           }
         });
       }
+    } finally {
+      // Always clean up the sending flag
+      delete (this as any)[sendingKey];
+      debugLogger.log('✅ WEBVIEW SENDING COMPLETE:', {
+        agentId,
+        source,
+        timestamp: new Date().toISOString()
+      });
     }
+  }
+
+  private postProcessResponseForTasks(response: string, originalMessage: string): string {
+    // Check for complete, valid task syntax patterns, not just markers
+    const hasValidTaskSyntax = /\[(?:CREATE_FILE|EDIT_FILE|DELETE_FILE):[^\]]+\][\s\S]*?\[\/(?:CREATE_FILE|EDIT_FILE|DELETE_FILE)\]/.test(response);
+    
+    if (hasValidTaskSyntax) {
+      debugLogger.log('Response already contains complete task syntax, no post-processing needed');
+      return response;
+    }
+    
+    // Check if response contains incomplete task syntax markers (indicating corruption/streaming issues)
+    const hasIncompleteMarkers = response.includes('[CREATE_FILE:') || response.includes('[EDIT_FILE:') || response.includes('[DELETE_FILE:');
+    if (hasIncompleteMarkers && !hasValidTaskSyntax) {
+      debugLogger.log('Response contains incomplete task syntax markers, will post-process', {
+        responseLength: response.length,
+        responsePreview: response.substring(0, 200) + '...'
+      });
+    }
+
+    // Detect note-taking intent from original message
+    const noteTakingPhrases = ['get this', 'capture this', 'write this down', 'note this', 'log this', 'add this', 'remember this', 'save this', 'record this'];
+    const isNoteTaking = noteTakingPhrases.some(phrase => originalMessage.toLowerCase().includes(phrase));
+    
+    if (!isNoteTaking) {
+      debugLogger.log('No note-taking intent detected, returning original response');
+      return response;
+    }
+
+    // Extract the actual content the user wants to log
+    const contentMatch = originalMessage.match(/(?:get this|capture this|write this down|note this|log this|add this|remember this|save this|record this)(?:\s*[:\-]?\s*)(.+)/i);
+    const userContent = contentMatch ? contentMatch[1].trim() : originalMessage;
+
+    // Check if response looks like file display (markdown headers, file content preview)
+    const isDisplayText = response.includes('**thought_log.txt**') || 
+                         response.includes('# Thought Log') ||
+                         response.includes('## Entries') ||
+                         (response.includes('**') && response.length > 1000);
+
+    if (isDisplayText) {
+      debugLogger.log('Detected display text response, converting to task syntax', {
+        originalLength: response.length,
+        userContent: userContent,
+        isDisplayText: true
+      });
+
+      // Create context for AI to reason about the note-taking task
+
+      // Let the AI reason about the file structure instead of hardcoding assumptions
+      // Create a context-aware request that allows the AI to analyze and adapt
+      const contextAwareRequest = `The user wants to add this note: "${userContent}"
+      
+Please analyze the current structure of thought_log.txt and append this entry appropriately. If the file doesn't exist or has an unexpected structure, use your reasoning to either:
+1. Adapt to the existing structure, or 
+2. Ask the user how they'd prefer to proceed, or
+3. Create/modify the structure as needed
+
+Use the appropriate task syntax based on what you find.`;
+
+      debugLogger.log('Generated context-aware request for AI reasoning', {
+        contextAwareRequest: contextAwareRequest,
+        originalResponsePreview: response.substring(0, 200) + '...'
+      });
+
+      return contextAwareRequest;
+    }
+
+    debugLogger.log('Response does not appear to be display text, returning original');
+    return response;
   }
 
   private async handleGetProjectContext(): Promise<void> {

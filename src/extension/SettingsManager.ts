@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ExtensionSettings, AIProvider } from '@/shared/types';
+import { ExtensionSettings, AIProvider, HelperBrainSettings } from '@/shared/types';
 
 export class SettingsManager {
   private context: vscode.ExtensionContext;
@@ -29,7 +29,20 @@ export class SettingsManager {
       logLevel: config.get<'none' | 'error' | 'warn' | 'info' | 'debug'>('logLevel', 'info'),
       dataRetentionDays: config.get<number>('dataRetentionDays', 30),
       requireConfirmation: config.get<boolean>('requireConfirmation', true),
-      allowTelemetry: config.get<boolean>('allowTelemetry', false)
+      allowTelemetry: config.get<boolean>('allowTelemetry', false),
+      helperBrain: this.loadHelperBrainSettings(config)
+    };
+  }
+
+  private loadHelperBrainSettings(config: vscode.WorkspaceConfiguration): HelperBrainSettings {
+    return {
+      enabled: config.get<boolean>('helperBrain.enabled', true),
+      useAgentProvider: config.get<boolean>('helperBrain.useAgentProvider', true),
+      provider: config.get<AIProvider>('helperBrain.provider', AIProvider.ANTHROPIC),
+      modelName: config.get<string>('helperBrain.modelName', 'claude-3-5-sonnet-20241022'),
+      temperature: config.get<number>('helperBrain.temperature', 0.3),
+      maxTokens: config.get<number>('helperBrain.maxTokens', 1000),
+      systemPrompt: config.get<string>('helperBrain.systemPrompt', '')
     };
   }
 
@@ -127,5 +140,9 @@ export class SettingsManager {
 
   public getDefaultProvider(): AIProvider {
     return this.settings.defaultProvider;
+  }
+
+  public getHelperBrainSettings(): HelperBrainSettings {
+    return { ...this.settings.helperBrain };
   }
 }

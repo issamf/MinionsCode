@@ -103,6 +103,27 @@ export const App: React.FC = () => {
       console.log('=== WEBVIEW RECEIVED MESSAGE ===', message);
       webviewLogger.log('Webview received message', { type: message.type, hasData: !!message.data });
 
+      // 🚨 CRITICAL: Check for message forwarding loops
+      const messageKey = `${message.type}-${message.data?.agentId}-${message.data?.done}-${message.data?.response?.substring(0, 50)}`;
+      const appRecentMessages = (window as any).appRecentMessages = (window as any).appRecentMessages || [];
+      
+      if (appRecentMessages.includes(messageKey)) {
+        console.error('🚨 APP COMPONENT DUPLICATE MESSAGE DETECTED!', {
+          messageType: message.type,
+          messageKey: messageKey.substring(0, 100),
+          recentCount: appRecentMessages.length,
+          agentId: message.data?.agentId
+        });
+        // Don't process duplicate messages - this is likely the infinite loop source!
+        return;
+      }
+      
+      // Store message key for duplicate detection (keep last 20)
+      appRecentMessages.push(messageKey);
+      if (appRecentMessages.length > 20) {
+        appRecentMessages.shift();
+      }
+
       switch (message.type) {
         case 'init':
           initReceived = true; // Mark that we received init response
@@ -153,6 +174,52 @@ export const App: React.FC = () => {
             showQuickChat: true,
             quickChatContext: message.data?.selectedText 
           }));
+          break;
+
+        case 'messageResponse':
+          console.log('=== RECEIVED MESSAGE RESPONSE ===', message.data);
+          webviewLogger.log('Received message response from agent', { agentId: message.data?.agentId });
+          // Forward to agent widgets using the same message type they expect
+          if (message.data?.agentId) {
+            console.log('🔄 FORWARDING MESSAGE RESPONSE TO WIDGETS:', {
+              agentId: message.data.agentId,
+              done: message.data.done,
+              responseLength: message.data.response?.length,
+              responsePreview: message.data.response?.substring(0, 100),
+              timestamp: new Date().toISOString()
+            });
+            window.postMessage({
+              type: 'messageResponse',
+              data: message.data
+            }, '*');
+          }
+          break;
+
+        case 'messageThinking':
+          console.log('=== RECEIVED THINKING STATE ===', message.data);
+          webviewLogger.log('Received thinking state from agent', { agentId: message.data?.agentId });
+          // Forward to agent widgets using the same message type they expect
+          if (message.data?.agentId) {
+            console.log('🔄 FORWARDING THINKING STATE TO WIDGETS:', {
+              agentId: message.data.agentId,
+              thinking: message.data.thinking,
+              timestamp: new Date().toISOString()
+            });
+            window.postMessage({
+              type: 'messageThinking',
+              data: message.data
+            }, '*');
+          }
+          break;
+
+        case 'sharedChatResponse':
+          console.log('=== RECEIVED SHARED CHAT RESPONSE ===', message.data);
+          webviewLogger.log('Received shared chat response', message.data);
+          // Forward to all agent widgets for shared chat display
+          window.postMessage({
+            type: 'sharedChatResponse',
+            data: message.data
+          }, '*');
           break;
 
         case 'error':

@@ -52,33 +52,51 @@ jest.mock('sqlite3', () => ({
   Database: jest.fn(),
 }));
 
-jest.mock('fs', () => ({
-  promises: {
-    readFile: jest.fn(),
-    writeFile: jest.fn(),
-    mkdir: jest.fn(),
-    readdir: jest.fn(),
-  },
-  existsSync: jest.fn(),
-  appendFileSync: jest.fn(),
-  mkdirSync: jest.fn(),
-  readdirSync: jest.fn(),
-  watch: jest.fn(),
-}));
+// For integration tests, we need real fs operations
+// But keep some methods mocked for unit tests
+jest.mock('fs', () => {
+  const actualFs = jest.requireActual('fs');
+  return {
+    // Use real fs for integration tests
+    ...actualFs,
+    // Mock only the methods that should be mocked for unit tests
+    promises: {
+      ...actualFs.promises,
+      readFile: jest.fn().mockImplementation(actualFs.promises.readFile),
+      writeFile: jest.fn().mockImplementation(actualFs.promises.writeFile),
+      mkdir: jest.fn().mockImplementation(actualFs.promises.mkdir),
+      readdir: jest.fn().mockImplementation(actualFs.promises.readdir),
+    },
+    // Keep real file operations for integration tests
+    existsSync: actualFs.existsSync,
+    appendFileSync: actualFs.appendFileSync,
+    mkdirSync: actualFs.mkdirSync,
+    readFileSync: actualFs.readFileSync,
+    writeFileSync: actualFs.writeFileSync,
+    readdirSync: actualFs.readdirSync,
+    unlinkSync: actualFs.unlinkSync,
+    rmdirSync: actualFs.rmdirSync,
+    statSync: actualFs.statSync,
+    chmodSync: actualFs.chmodSync,
+    // Mock watch for unit tests
+    watch: jest.fn(),
+  };
+});
 
-jest.mock('path', () => ({
-  join: jest.fn((...args) => args.join('/')),
-  basename: jest.fn((filePath, ext) => {
-    const name = filePath.split('/').pop() || '';
-    return ext ? name.replace(ext, '') : name;
-  }),
-  extname: jest.fn((filePath) => {
-    const parts = filePath.split('.');
-    return parts.length > 1 ? '.' + parts.pop() : '';
-  }),
-  dirname: jest.fn(),
-  resolve: jest.fn(),
-}));
+// For integration tests, use real path operations with cross-platform support
+jest.mock('path', () => {
+  const actualPath = jest.requireActual('path');
+  return {
+    // Use real path for integration tests
+    ...actualPath,
+    // Keep real implementations but make them spy-able for unit tests
+    join: jest.fn().mockImplementation(actualPath.join),
+    basename: jest.fn().mockImplementation(actualPath.basename),
+    extname: jest.fn().mockImplementation(actualPath.extname),
+    dirname: jest.fn().mockImplementation(actualPath.dirname),
+    resolve: jest.fn().mockImplementation(actualPath.resolve),
+  };
+});
 
 // Setup console spy to reduce noise in tests
 const originalConsole = console;

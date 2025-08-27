@@ -1,9 +1,12 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { AgentConfig } from '@/shared/types';
+import { AgentConfig, PermissionType, IntentClassificationResult } from '@/shared/types';
 import { AIProviderManager } from '@/providers/AIProviderManager';
 import { AIMessage } from '@/providers/AIProviderInterface';
+import { IntentClassificationService } from '@/services/IntentClassificationService';
+import { SettingsManager } from '@/extension/SettingsManager';
+import { debugLogger } from '@/utils/logger';
 
 interface AgentMemory {
   agentId: string;
@@ -27,6 +30,8 @@ export class AgentService {
   private agentMemories: Map<string, AgentMemory> = new Map();
   private activeStreams: Map<string, boolean> = new Map();
   private context: vscode.ExtensionContext | null = null;
+  private intentClassificationService: IntentClassificationService | null = null;
+  private settingsManager: SettingsManager | null = null;
 
   constructor() {
     this.providerManager = new AIProviderManager();
@@ -34,11 +39,21 @@ export class AgentService {
 
   public setContext(context: vscode.ExtensionContext): void {
     this.context = context;
+    try {
+      this.settingsManager = new SettingsManager(context);
+      this.intentClassificationService = new IntentClassificationService(context);
+    } catch (error) {
+      // In test environment, these services may not be available
+      console.warn('Services initialization failed, using fallback mode:', error);
+    }
     this.loadPersistedMemories();
   }
 
   public async initialize(): Promise<void> {
     await this.providerManager.detectAvailableProviders();
+    if (this.intentClassificationService) {
+      await this.intentClassificationService.initialize();
+    }
   }
 
   public async processMessage(
@@ -46,6 +61,29 @@ export class AgentService {
     userMessage: string,
     onResponse: (chunk: string, done: boolean) => void
   ): Promise<void> {
+    // 🚨 LOOP DETECTION: Check if this agent is already processing
+    const processingKey = `${agent.id}-processing`;
+    if (this.activeStreams.has(processingKey)) {
+      console.error('🚨 INFINITE LOOP DETECTED: Agent is already processing a message!', {
+        agentId: agent.id,
+        agentName: agent.name,
+        userMessage: userMessage.substring(0, 100),
+        activeStreams: Array.from(this.activeStreams.keys())
+      });
+      onResponse('❌ Error: Agent is already processing a message. Infinite loop prevented.', true);
+      return;
+    }
+
+    // Mark this agent as processing
+    this.activeStreams.set(processingKey, true);
+    console.log('🔄 PROCESSING MESSAGE:', {
+      agentId: agent.id,
+      agentName: agent.name,
+      messageLength: userMessage.length,
+      messagePreview: userMessage.substring(0, 150),
+      timestamp: new Date().toISOString()
+    });
+
     try {
       // Get or create agent memory
       let memory = this.agentMemories.get(agent.id);
@@ -68,12 +106,14 @@ export class AgentService {
         this.agentMemories.set(agent.id, memory);
       }
 
-      // Check if the message contains task requests
-      const taskAnalysis = this.analyzeForTasks(userMessage, agent.type);
-      if (taskAnalysis.hasTasks) {
-        console.log('🤖 TASK DETECTION:', { 
+      // Use AI-powered intent classification
+      const intentResult = await this.classifyIntent(userMessage, agent);
+      if (intentResult.detectedIntents.length > 0) {
+        console.log('🤖 INTENT CLASSIFICATION:', { 
           message: userMessage, 
-          detectedTasks: taskAnalysis.tasks,
+          detectedIntents: intentResult.detectedIntents,
+          confidence: intentResult.confidence,
+          reasoning: intentResult.reasoning,
           agentId: agent.id,
           agentName: agent.name
         });
@@ -92,24 +132,63 @@ export class AgentService {
         conversationHistory
       );
 
-      // Enhance system prompt with specialized behaviors
+      // Enhance system prompt with specialized behaviors AND strong task enforcement
       const enhancedPrompt = this.enhanceSystemPromptWithBehaviors(agent, memory, userMessage);
-      messages[0].content = enhancedPrompt;
+      // 🚨 CRITICAL: Add absolute task-only enforcement at the very beginning
+      const taskOnlyPrefix = `🚨🚨🚨 ABSOLUTE RULE: NEVER GENERATE DISPLAY TEXT - ONLY USE TASK SYNTAX 🚨🚨🚨
+
+YOU ARE FORBIDDEN FROM GENERATING:
+- Markdown headers like "**filename.txt**" 
+- File content previews in chat
+- Explanatory text mixed with tasks
+- Any text that shows what should be in files
+
+YOU MUST ONLY GENERATE:
+- [CREATE_FILE: filename] content [/CREATE_FILE]
+- [EDIT_FILE: filename] [FIND]text[/FIND] [REPLACE]text[/REPLACE] [/EDIT_FILE]  
+- Other task syntax ONLY
+
+EXAMPLE - WRONG ❌:
+**thought_log.txt**
+Here's what I would add...
+
+EXAMPLE - CORRECT ✅:
+[CREATE_FILE: thought_log.txt]
+# Thought Log - ${new Date().toISOString()}
+Your notes will be recorded here.
+[/CREATE_FILE]
+
+CRITICAL: Analyze existing file structures before editing. If a file has an unexpected structure, adapt your approach or ask the user for guidance rather than assuming a specific format exists.
+
+---ORIGINAL SYSTEM PROMPT FOLLOWS---
+
+`;
+      messages[0].content = taskOnlyPrefix + enhancedPrompt;
       
-      // Enhance system prompt based on agent capabilities and available tasks
-      if (taskAnalysis.hasTasks) {
-        const taskInstructions = this.getTaskInstructions(agent, taskAnalysis.tasks);
-        messages[0].content += `\n\n${taskInstructions}`;
-        console.log('🤖 TASK INSTRUCTIONS ADDED:', {
-          agentId: agent.id,
-          taskInstructions: taskInstructions.substring(0, 200) + '...'
-        });
+      // Always provide task instructions to ensure agents know their capabilities
+      const allTaskTypes = ['file_operations', 'git_operations', 'command_execution'];
+      const taskInstructions = this.getTaskInstructions(agent, allTaskTypes);
+      messages[0].content += `\n\n${taskInstructions}`;
+      
+      // Add emphasis when tasks are detected with high confidence
+      if (intentResult.detectedIntents.length > 0 && intentResult.confidence > 0.6) {
+        const intentSpecificInstructions = this.getIntentSpecificInstructions(intentResult.detectedIntents, userMessage);
+        messages[0].content += `\n\n🎯 **INTENT DETECTED**: ${intentResult.detectedIntents.join(', ')}. Confidence: ${(intentResult.confidence * 100).toFixed(1)}%`;
+        messages[0].content += `\n${intentSpecificInstructions}`;
+        if (intentResult.reasoning) {
+          messages[0].content += `\nReasoning: ${intentResult.reasoning}`;
+        }
       }
 
       // Mark this stream as active
       this.activeStreams.set(agent.id, true);
 
-      // Generate streaming response
+      // Generate streaming response with safeguards
+      let accumulatedContent = '';
+      let chunkCount = 0;
+      const MAX_CHUNKS = 1000; // Prevent infinite responses
+      const MAX_CONTENT_LENGTH = 100000; // Prevent extremely long responses (increased from 50KB)
+      
       await this.providerManager.generateStreamingResponse(
         messages,
         agent.model,
@@ -118,17 +197,74 @@ export class AgentService {
             return; // Stream was cancelled
           }
           
+          chunkCount++;
+          accumulatedContent += chunk.content;
+          
+          // Detect repetitive patterns (indicating AI loop)
+          const recentContent = accumulatedContent.slice(-1000); // Last 1000 chars
+          const repetitivePatterns = [
+            /(\[CREATE_FILE:[^\]]+\][\s\S]*?\[\/CREATE_FILE\][\s\S]*?){2,}/s, // 2+ identical file creations
+            /(\[EDIT_FILE:[^\]]+\][\s\S]*?\[\/EDIT_FILE\][\s\S]*?){2,}/s, // 2+ identical file edits  
+            /(\[CREATE_FILE:[^\]]+\]\s*\[\/CREATE_FILE\][\s\S]*?){2,}/s, // 2+ empty file creations
+            /(From now on.*?){2,}/s, // Repeated promises of behavior
+            /(I'll automatically.*?){2,}/s, // Repeated automation promises
+          ];
+          
+          const hasRepetitivePattern = repetitivePatterns.some(pattern => pattern.test(recentContent));
+          
+          // Check for incomplete task syntax at the end (response cutoff)
+          const hasIncompleteTask = /\[CREATE_FILE:\s*[^\]]*$|\[EDIT_FILE:\s*[^\]]*$|\[DELETE_FILE:\s*[^\]]*$/i.test(accumulatedContent);
+          
+          // Emergency brake for runaway responses
+          if (chunkCount > MAX_CHUNKS || accumulatedContent.length > MAX_CONTENT_LENGTH || hasRepetitivePattern) {
+            console.warn('🚨 EMERGENCY BRAKE: Stopping runaway response', {
+              agentId: agent.id,
+              chunkCount,
+              contentLength: accumulatedContent.length,
+              repetitivePattern: hasRepetitivePattern,
+              recentContentPreview: recentContent.slice(-200)
+            });
+            this.activeStreams.delete(agent.id);
+            // Pass accumulated content, not just current chunk, so task execution can work
+            onResponse(accumulatedContent, true); // Force done with full accumulated response
+            return;
+          }
+          
+          // Check for response cutoff during task execution
+          if (chunk.done && hasIncompleteTask) {
+            console.warn('⚠️ RESPONSE CUTOFF: Task syntax appears incomplete', {
+              agentId: agent.id,
+              totalLength: accumulatedContent.length,
+              lastChars: accumulatedContent.slice(-50),
+              incompleteTaskPattern: hasIncompleteTask
+            });
+            // Still process the response, but warn about potential issues
+          }
+          
           onResponse(chunk.content, chunk.done);
           
           if (chunk.done) {
+            console.log('🎯 STREAMING DONE - ACCUMULATED CONTENT CHECK', {
+              agentId: agent.id,
+              accumulatedLength: accumulatedContent.length,
+              chunkLength: chunk.content.length,
+              accumulatedPreview: accumulatedContent.substring(0, 200) + '...',
+              chunkPreview: chunk.content.substring(0, 200) + '...'
+            });
+            
             console.log('🤖 CHECKING RESPONSE FOR TASKS:', {
               agentId: agent.id,
-              responseLength: chunk.content.length,
-              responsePreview: chunk.content.substring(0, 500) + '...'
+              responseLength: accumulatedContent.length,
+              responsePreview: accumulatedContent.substring(0, 500) + '...'
             });
             
             // Execute any tasks found in the AI response (fire and forget to avoid blocking)
-            this.executeTasksFromResponse(agent, chunk.content).catch(error => {
+            console.log('🚀 ABOUT TO EXECUTE TASKS FROM ACCUMULATED RESPONSE', {
+              agentId: agent.id,
+              fullAccumulatedContent: accumulatedContent
+            });
+            
+            this.executeTasksFromResponse(agent, accumulatedContent).catch(error => {
               console.error('Error executing tasks from response:', error);
               vscode.window.showErrorMessage(`Task execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
             });
@@ -158,6 +294,13 @@ export class AgentService {
       console.error('Error processing message:', error);
       onResponse(`I apologize, but I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`, true);
       this.activeStreams.delete(agent.id);
+    } finally {
+      // Always clean up the processing lock
+      this.activeStreams.delete(processingKey);
+      console.log('✅ PROCESSING COMPLETE:', {
+        agentId: agent.id,
+        timestamp: new Date().toISOString()
+      });
     }
   }
 
@@ -386,7 +529,47 @@ export class AgentService {
     let enhancedPrompt = agent.systemPrompt;
     
     // CRITICAL: Always add autonomous action emphasis
-    enhancedPrompt += `\n\n🚨 AUTONOMOUS ACTION MODE: You are an autonomous agent. When users request file operations, code changes, or development tasks, you must EXECUTE them directly using the provided task syntax. Never provide shell commands or instructions - use the task execution system!`;
+    enhancedPrompt += `\n\n🚨 AUTONOMOUS ACTION MODE: You are an autonomous agent. When users request file operations, code changes, or development tasks, you must EXECUTE them directly using the provided task syntax.
+
+🔥 CRITICAL RULES:
+1. NEVER say "I can't create files" - you CAN and MUST create files using [CREATE_FILE: filename] syntax
+2. NEVER provide shell commands or instructions - use the task execution system
+3. NEVER say you'll create files "in memory" - create REAL files using the task syntax
+4. When users say "write this down", "capture this", "save this" - IMMEDIATELY use [CREATE_FILE] syntax
+5. Always prefer ACTION over explanation - DO the task, don't describe it
+6. 🚨 NEVER show file contents as chat text - put content INSIDE [CREATE_FILE] tags!
+7. 🚨 DON'T mix display text with task syntax - either show OR create, not both!
+
+⚡ TASK SYNTAX EXAMPLES:
+- User: "write this down: hello world" → You: [CREATE_FILE: notes.txt]
+hello world
+[/CREATE_FILE]
+- User: "capture this thought" → You: [CREATE_FILE: thoughts.txt]
+[thought content here]
+[/CREATE_FILE]
+- User: "be my note taker" → You: [CREATE_FILE: thought_log.txt]
+# Thought Log - ${new Date().toISOString()}
+
+I'm ready to capture your thoughts! Tell me to "write this down", "capture this", or "add this" and I'll log everything with timestamps.
+
+## Notes
+Ready to capture your thoughts...
+
+[/CREATE_FILE]
+- User: "write this down: I need to start planning" → You: [EDIT_FILE: notes.txt]
+[FIND]Ready to capture your thoughts![/FIND]
+[REPLACE]Ready to capture your thoughts!
+
+## Entry - ${new Date().toISOString()}
+I need to start planning[/REPLACE]
+[/EDIT_FILE]
+
+🚨 CRITICAL: ALWAYS include meaningful content between file tags - NEVER create empty files!
+🚨 CRITICAL: Complete your response fully - don't cut off mid-sentence!
+🚨 CRITICAL: Use task syntax ONLY - don't show file contents as chat text first!
+🚨 CRITICAL: Execute ONE task per response - don't repeat the same task multiple times!
+
+YOU HAVE REAL FILE SYSTEM ACCESS - USE IT!`;
     
     // Add learning-based context
     if (memory.learningData.interactionCount > 5) {
@@ -605,38 +788,34 @@ export class AgentService {
     return memory;
   }
 
-  private analyzeForTasks(message: string, _agentType: string): { hasTasks: boolean; tasks: string[] } {
-    const taskKeywords = {
-      file_operations: [
-        'create file', 'write file', 'save to file', 'generate file', 'make file',
-        'create a file', 'write a file', 'save a file', 'make a file',
-        'create text', 'write text', 'save text', 'generate text',
-        'create .txt', 'write .js', 'make .py', 'save .md',
-        'new file', 'add file', 'build file',
-        'edit file', 'modify file', 'change file', 'update file',
-        'edit the file', 'modify the file', 'change the file', 'update the file',
-        'change content', 'update content', 'modify content', 'edit content',
-        'change the content', 'update the content', 'modify the content',
-        'replace content', 'replace text', 'find and replace'
-      ],
-      git_operations: ['git commit', 'commit changes', 'push to git', 'create branch'],
-      command_execution: ['run command', 'execute', 'npm install', 'npm run', 'docker'],
-      code_analysis: ['analyze code', 'review code', 'check for bugs', 'lint code']
-    };
+  private async classifyIntent(message: string, agent: AgentConfig): Promise<IntentClassificationResult> {
+    if (!this.intentClassificationService || !this.settingsManager) {
+      // Fallback to simple static classification if services not available
+      return {
+        detectedIntents: [],
+        confidence: 0.1,
+        suggestedKeywords: [],
+        reasoning: 'Services not initialized'
+      };
+    }
 
-    const detectedTasks: string[] = [];
-    const lowerMessage = message.toLowerCase();
-
-    Object.entries(taskKeywords).forEach(([taskType, keywords]) => {
-      if (keywords.some(keyword => lowerMessage.includes(keyword))) {
-        detectedTasks.push(taskType);
-      }
-    });
-
-    return {
-      hasTasks: detectedTasks.length > 0,
-      tasks: detectedTasks
-    };
+    try {
+      const helperBrainSettings = this.settingsManager.getHelperBrainSettings();
+      return await this.intentClassificationService.classifyIntent(
+        message,
+        agent.model.provider,
+        agent.model.modelName,
+        helperBrainSettings
+      );
+    } catch (error) {
+      console.error('Error in intent classification:', error);
+      return {
+        detectedIntents: [],
+        confidence: 0.1,
+        suggestedKeywords: [],
+        reasoning: 'Classification failed'
+      };
+    }
   }
 
   private getTaskInstructions(_agent: AgentConfig, tasks: string[]): string {
@@ -646,8 +825,8 @@ export class AgentService {
       instructions += `
 **File Operations:**
 - Create new files: \`[CREATE_FILE: path/filename.ext]\\ncontent here\\n[/CREATE_FILE]\`
-- Edit existing files: \`[EDIT_FILE: path/filename.ext]\\n[FIND]old content[/FIND]\\n[REPLACE]new content[/REPLACE]\\n[/EDIT_FILE]\`
-- Read files: \`[READ_file: path/filename.ext]\`
+- Edit existing files: \`[EDIT_FILE: path/filename.ext]\\n[FIND]exact text to find[/FIND]\\n[REPLACE]exact replacement text[/REPLACE]\\n[/EDIT_FILE]\`
+- Read files: \`[READ_FILE: path/filename.ext]\`
 - Search in files: \`[GREP: pattern, path/glob/pattern]\`
 - Find files: \`[FIND_FILES: filename_pattern]\`
 - Delete files: \`[DELETE_FILE: path/filename.ext]\`
@@ -688,6 +867,12 @@ For ALL file operations, code changes, or development tasks, you MUST use the pr
 ✅ Correct: \`[EDIT_FILE: test.txt]\\n[FIND]Hello World[/FIND]\\n[REPLACE]second try[/REPLACE]\\n[/EDIT_FILE]\`
 ❌ Wrong: \`echo "second try" > test.txt\` or \`[UPDATE_FILE: test.txt]\`
 
+**Word Replacement:** "replace the first word in test.txt with 'bye'" (file contains "hi bob")
+✅ Correct: \`[EDIT_FILE: test.txt]\\n[FIND]hi[/FIND]\\n[REPLACE]bye[/REPLACE]\\n[/EDIT_FILE]\` → Results in "bye bob"
+❌ Wrong: \`[FIND]hi bob[/FIND]\\n[REPLACE]bob bye[/REPLACE]\` → Would incorrectly result in "bob bye"
+
+**CRITICAL: For word/text replacement, FIND exactly what needs to be replaced, REPLACE with exactly what it should become. Do NOT rearrange or modify surrounding text!**
+
 **File Updates:** "update the file to contain new content"
 ✅ Correct: Use EDIT_FILE syntax above
 ❌ Wrong: Any shell commands or non-existent syntax
@@ -697,18 +882,109 @@ I WILL EXECUTE these tasks automatically. ALWAYS use the exact syntax above!`;
     return instructions;
   }
 
-  private async executeTasksFromResponse(_agent: AgentConfig, response: string): Promise<void> {
-    console.log('🤖 EXECUTING TASKS FROM RESPONSE:', {
+  private getIntentSpecificInstructions(detectedIntents: string[], userMessage: string): string {
+    let instructions = '';
+    
+    if (detectedIntents.includes('file_operations')) {
+      instructions += `🚨 FILE OPERATION REQUIRED! User wants you to work with files.`;
+      
+      // Detect note-taking context
+      const noteTakingPhrases = ['get this', 'capture this', 'write this down', 'note this', 'log this', 'add this', 'remember this'];
+      const isNoteTaking = noteTakingPhrases.some(phrase => userMessage.toLowerCase().includes(phrase));
+      
+      if (isNoteTaking) {
+        instructions += `
+🗒️ NOTE-TAKING DETECTED: User wants to add content to an existing file (likely thought_log.txt or notes file).
+CRITICAL: You must use [EDIT_FILE: filename] syntax to add new content to the existing file.
+NEVER generate markdown display text like "**filename.txt**" - that shows the user what the file looks like instead of editing it!
+IMMEDIATELY use: [EDIT_FILE: thought_log.txt] [FIND]existing text[/FIND] [REPLACE]existing text + new entry[/REPLACE] [/EDIT_FILE]`;
+      } else {
+        instructions += `
+📁 FILE OPERATION: Use the appropriate task syntax:
+- To create: [CREATE_FILE: filename] content [/CREATE_FILE]  
+- To edit: [EDIT_FILE: filename] [FIND]old text[/FIND] [REPLACE]new text[/REPLACE] [/EDIT_FILE]
+- To delete: [DELETE_FILE: filename]`;
+      }
+    }
+    
+    if (detectedIntents.includes('git_operations')) {
+      instructions += `\n🔄 GIT OPERATION: Use [GIT: command] syntax for version control operations.`;
+    }
+    
+    if (detectedIntents.includes('command_execution')) {
+      instructions += `\n⚡ COMMAND EXECUTION: Use [COMMAND: command] syntax to run terminal commands.`;
+    }
+    
+    return instructions;
+  }
+
+  public async executeTasksFromResponse(_agent: AgentConfig, response: string): Promise<void> {
+    // ABSOLUTE FIRST LINE - MANDATORY LOGGING NOW THAT FS IS FIXED
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const os = require('os');
+      const logEntry = `[${new Date().toISOString()}] 🔥🔥🔥 FIXED FS: executeTasksFromResponse ENTRY - ENV: ${process.env.NODE_ENV} - agent: ${_agent.id}, responseLength: ${response.length}\n`;
+      fs.appendFileSync(path.join(os.tmpdir(), 'test-debug.log'), logEntry);
+    } catch (e) { 
+      // If this still fails, log the error
+      console.error('CRITICAL: Failed to log executeTasksFromResponse entry even after fs fix:', e);
+    }
+    
+    // CRITICAL: Test if method is reached at all
+    debugLogger.log('🚀🚀🚀 CRITICAL DEBUG: executeTasksFromResponse METHOD REACHED!', {
+      agentId: _agent.id,
+      responseLength: response.length,
+      timestamp: new Date().toISOString()
+    });
+    
+    debugLogger.log('🚀 METHOD ENTRY: executeTasksFromResponse CALLED');
+    debugLogger.log('🚨 DEBUG: executeTasksFromResponse called!', { agentId: _agent.id, responseLength: response.length });
+    
+    // TEST DEBUG: Also log to test file in test environment
+    if (process.env.NODE_ENV === 'test') {
+      const fs = require('fs');
+      const path = require('path');
+      const os = require('os');
+      try {
+        const logEntry = `[${new Date().toISOString()}] 🔧 AGENT_SERVICE: executeTasksFromResponse ENTRY - agent: ${_agent.id}, responseLength: ${response.length}\n`;
+        fs.appendFileSync(path.join(os.tmpdir(), 'test-debug.log'), logEntry);
+      } catch (e) { /* ignore */ }
+    }
+    
+    debugLogger.log('🎯 TASK EXECUTION STARTED', {
+      agentId: _agent.id,
+      responseLength: response.length,
+      fullResponse: response
+    });
+    
+    debugLogger.log('🤖 EXECUTING TASKS FROM RESPONSE:', {
       agentId: _agent.id,
       responseLength: response.length,
       responseSnippet: response.substring(0, 300)
     });
     
+    // Safeguard: Limit tasks per response to prevent abuse
+    const MAX_TASKS_PER_RESPONSE = 10;
+    let taskCount = 0;
+    
+    const checkTaskLimit = (): boolean => {
+      if (taskCount >= MAX_TASKS_PER_RESPONSE) {
+        debugLogger.log('🚨 TASK LIMIT REACHED: Stopping task execution to prevent abuse', {
+          agentId: _agent.id,
+          taskCount,
+          maxTasks: MAX_TASKS_PER_RESPONSE
+        });
+        return false;
+      }
+      return true;
+    };
+    
     // Parse all task commands from AI response
     const patterns = {
       fileCreate: /\[CREATE_FILE:\s*([^\]]+)\]\n([\s\S]*?)\[\/CREATE_FILE\]/g,
       fileEdit: /\[EDIT_FILE:\s*([^\]]+)\]\n\[FIND\]([\s\S]*?)\[\/FIND\]\n\[REPLACE\]([\s\S]*?)\[\/REPLACE\]\n\[\/EDIT_FILE\]/g,
-      readFile: /\[READ_file:\s*([^\]]+)\]/g,
+      readFile: /\[READ_FILE:\s*([^\]]+)\]/g,
       grep: /\[GREP:\s*([^,]+),\s*([^\]]+)\]/g,
       findFiles: /\[FIND_FILES:\s*([^\]]+)\]/g,
       deleteFile: /\[DELETE_FILE:\s*([^\]]+)\]/g,
@@ -724,27 +1000,83 @@ I WILL EXECUTE these tasks automatically. ALWAYS use the exact syntax above!`;
     let match;
     let executionResults: string[] = [];
 
+    debugLogger.log('🔍 TASK REGEX DEBUG: Testing file creation pattern', {
+      pattern: patterns.fileCreate.source,
+      responseSnippet: response.substring(0, 500),
+      responseContainsCreateFile: response.includes('[CREATE_FILE:')
+    });
+
+    // TEST DEBUG: Log regex testing
+    if (process.env.NODE_ENV === 'test') {
+      const fs = require('fs');
+      const path = require('path');
+      const os = require('os');
+      try {
+        const logEntry = `[${new Date().toISOString()}] 🔧 AGENT_SERVICE: Testing CREATE_FILE regex against response\n`;
+        fs.appendFileSync(path.join(os.tmpdir(), 'test-debug.log'), logEntry);
+      } catch (e) { /* ignore */ }
+    }
+
     // Execute file creation tasks
     while ((match = patterns.fileCreate.exec(response)) !== null) {
+      // TEST DEBUG: Log pattern match
+      if (process.env.NODE_ENV === 'test') {
+        const fs = require('fs');
+        const path = require('path');
+        const os = require('os');
+        try {
+          const logEntry = `[${new Date().toISOString()}] 🔧 AGENT_SERVICE: CREATE_FILE pattern MATCHED - fileName: ${match[1]}\n`;
+          fs.appendFileSync(path.join(os.tmpdir(), 'test-debug.log'), logEntry);
+        } catch (e) { /* ignore */ }
+      }
+      
+      debugLogger.log('🔍 TASK REGEX DEBUG: File creation pattern matched', {
+        fileName: match[1],
+        contentLength: match[2].length,
+        contentPreview: match[2].substring(0, 100)
+      });
+      if (!checkTaskLimit()) break;
       const fileName = match[1].trim();
       const content = match[2].trim();
-      await this.createFile(fileName, content);
-      executionResults.push(`Created file: ${fileName}`);
+      
+      // Handle empty content gracefully
+      if (!content) {
+        debugLogger.log('🚨 WARNING: Agent tried to create empty file, adding default content', {
+          agentId: _agent.id,
+          fileName
+        });
+        const defaultContent = `# ${fileName.replace(/\.[^/.]+$/, "").replace(/[_-]/g, ' ').toUpperCase()}
+
+Created on: ${new Date().toISOString()}
+
+This file was created by your AI agent but had no initial content.
+Add your content below:
+
+`;
+        await this.createFile(_agent, fileName, defaultContent);
+        executionResults.push(`Created file: ${fileName} (with default content - original was empty)`);
+      } else {
+        await this.createFile(_agent, fileName, content);
+        executionResults.push(`Created file: ${fileName}`);
+      }
+      taskCount++;
     }
 
     // Execute file editing tasks
     while ((match = patterns.fileEdit.exec(response)) !== null) {
+      if (!checkTaskLimit()) break;
       const fileName = match[1].trim();
       const findText = match[2].trim();
       const replaceText = match[3].trim();
-      await this.editFile(fileName, findText, replaceText);
+      await this.editFile(_agent, fileName, findText, replaceText);
       executionResults.push(`Edited file: ${fileName}`);
+      taskCount++;
     }
 
     // Execute file reading tasks
     while ((match = patterns.readFile.exec(response)) !== null) {
       const fileName = match[1].trim();
-      const content = await this.readFile(fileName);
+      const content = await this.readFile(_agent, fileName);
       executionResults.push(`Read file: ${fileName} (${content.length} characters)`);
     }
 
@@ -766,7 +1098,7 @@ I WILL EXECUTE these tasks automatically. ALWAYS use the exact syntax above!`;
     // Execute delete files
     while ((match = patterns.deleteFile.exec(response)) !== null) {
       const fileName = match[1].trim();
-      await this.deleteFile(fileName);
+      await this.deleteFile(_agent, fileName);
       executionResults.push(`Deleted file: ${fileName}`);
     }
 
@@ -805,44 +1137,129 @@ I WILL EXECUTE these tasks automatically. ALWAYS use the exact syntax above!`;
     // Execute git commands
     while ((match = patterns.gitCommand.exec(response)) !== null) {
       const command = match[1].trim();
-      await this.executeGitCommand(command);
+      await this.executeGitCommand(_agent, command);
       executionResults.push(`Executed git: ${command}`);
     }
 
     // Execute git commits
     while ((match = patterns.gitCommit.exec(response)) !== null) {
       const commitMessage = match[1].trim();
-      await this.executeGitCommit(commitMessage);
+      await this.executeGitCommit(_agent, commitMessage);
       executionResults.push(`Git commit: ${commitMessage}`);
     }
 
     // Execute shell commands
     while ((match = patterns.runCommand.exec(response)) !== null) {
       const command = match[1].trim();
-      await this.executeShellCommand(command);
+      await this.executeShellCommand(_agent, command);
       executionResults.push(`Executed command: ${command}`);
     }
 
     // Show summary of executed tasks
-    console.log('🤖 TASK EXECUTION COMPLETE:', {
+    debugLogger.log('🤖 TASK EXECUTION COMPLETE:', {
       agentId: _agent.id,
       tasksFound: executionResults.length,
       tasks: executionResults
     });
+
+    // TEST DEBUG: Log completion
+    if (process.env.NODE_ENV === 'test') {
+      const fs = require('fs');
+      const path = require('path');
+      const os = require('os');
+      try {
+        const logEntry = `[${new Date().toISOString()}] 🔧 AGENT_SERVICE: EXECUTION COMPLETE - ${executionResults.length} tasks found\n`;
+        fs.appendFileSync(path.join(os.tmpdir(), 'test-debug.log'), logEntry);
+      } catch (e) { /* ignore */ }
+    }
     
     if (executionResults.length > 0) {
       vscode.window.showInformationMessage(
         `Agent executed ${executionResults.length} task(s):\n${executionResults.join('\n')}`
       );
     } else {
-      console.log('🤖 NO TASKS FOUND IN RESPONSE - Agent may have responded conversationally instead of using task syntax');
+      debugLogger.log('🤖 NO TASKS FOUND IN RESPONSE - Agent may have responded conversationally instead of using task syntax');
     }
   }
 
-  private async createFile(fileName: string, content: string): Promise<void> {
+  // Permission checking methods
+  private hasPermission(agent: AgentConfig, permissionType: PermissionType): boolean {
+    const permission = agent.permissions.find(p => p.type === permissionType);
+    return permission ? permission.granted : false;
+  }
+
+  private checkFilePermission(agent: AgentConfig, operation: 'read' | 'write', fileName: string): boolean {
+    const permissionType = operation === 'read' ? PermissionType.READ_FILES : PermissionType.WRITE_FILES;
+    
+    if (!this.hasPermission(agent, permissionType)) {
+      vscode.window.showErrorMessage(
+        `Agent "${agent.name}" does not have permission to ${operation} files. Please update agent permissions.`
+      );
+      return false;
+    }
+
+    // Check scope restrictions if defined
+    const permission = agent.permissions.find(p => p.type === permissionType);
+    if (permission?.scope && permission.scope.length > 0) {
+      const matchesScope = permission.scope.some(pattern => {
+        if (pattern.includes('*')) {
+          // Simple glob matching
+          const regex = new RegExp(pattern.replace(/\*/g, '.*'));
+          return regex.test(fileName);
+        }
+        return fileName.includes(pattern);
+      });
+      
+      if (!matchesScope) {
+        vscode.window.showErrorMessage(
+          `Agent "${agent.name}" does not have permission to ${operation} "${fileName}". File not in allowed scope.`
+        );
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private checkCommandPermission(agent: AgentConfig): boolean {
+    if (!this.hasPermission(agent, PermissionType.EXECUTE_COMMANDS)) {
+      vscode.window.showErrorMessage(
+        `Agent "${agent.name}" does not have permission to execute commands. Please update agent permissions.`
+      );
+      return false;
+    }
+    return true;
+  }
+
+  private checkGitPermission(agent: AgentConfig): boolean {
+    if (!this.hasPermission(agent, PermissionType.GIT_OPERATIONS)) {
+      vscode.window.showErrorMessage(
+        `Agent "${agent.name}" does not have permission to perform Git operations. Please update agent permissions.`
+      );
+      return false;
+    }
+    return true;
+  }
+
+  private async createFile(agent: AgentConfig, fileName: string, content: string): Promise<void> {
+    debugLogger.log('🔧 CREATE_FILE DEBUG: Starting file creation', { 
+      agentId: agent.id, 
+      fileName, 
+      contentLength: content.length,
+      agentPermissions: agent.permissions.map(p => `${p.type}:${p.granted}`)
+    });
+    
+    if (!this.checkFilePermission(agent, 'write', fileName)) {
+      debugLogger.log('🔧 CREATE_FILE DEBUG: Permission check failed');
+      return;
+    }
+    
+    debugLogger.log('🔧 CREATE_FILE DEBUG: Permission check passed');
+    
     try {
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
       if (!workspaceFolder) {
+        debugLogger.log('🔧 CREATE_FILE DEBUG: No workspace folder found');
         vscode.window.showErrorMessage('No workspace folder open');
         return;
       }
@@ -850,21 +1267,34 @@ I WILL EXECUTE these tasks automatically. ALWAYS use the exact syntax above!`;
       const filePath = path.join(workspaceFolder.uri.fsPath, fileName);
       const dirPath = path.dirname(filePath);
 
+      debugLogger.log('🔧 CREATE_FILE DEBUG: File paths', {
+        workspacePath: workspaceFolder.uri.fsPath,
+        filePath,
+        dirPath
+      });
+
       // Create directories if they don't exist
       if (!fs.existsSync(dirPath)) {
+        debugLogger.log('🔧 CREATE_FILE DEBUG: Creating directory', { dirPath });
         fs.mkdirSync(dirPath, { recursive: true });
       }
 
       // Write file
+      debugLogger.log('🔧 CREATE_FILE DEBUG: Writing file', { filePath, contentLength: content.length });
       fs.writeFileSync(filePath, content, 'utf8');
       
+      debugLogger.log('🔧 CREATE_FILE DEBUG: File creation successful');
       vscode.window.showInformationMessage(`File created: ${fileName}`);
     } catch (error) {
+      debugLogger.log('🔧 CREATE_FILE DEBUG: File creation failed', { error });
       vscode.window.showErrorMessage(`Failed to create file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  private async executeGitCommand(command: string): Promise<void> {
+  private async executeGitCommand(agent: AgentConfig, command: string): Promise<void> {
+    if (!this.checkGitPermission(agent)) {
+      return;
+    }
     try {
       const terminal = vscode.window.createTerminal('AI Agent Git');
       terminal.sendText(command);
@@ -874,7 +1304,10 @@ I WILL EXECUTE these tasks automatically. ALWAYS use the exact syntax above!`;
     }
   }
 
-  private async executeGitCommit(message: string): Promise<void> {
+  private async executeGitCommit(agent: AgentConfig, message: string): Promise<void> {
+    if (!this.checkGitPermission(agent)) {
+      return;
+    }
     try {
       const terminal = vscode.window.createTerminal('AI Agent Git');
       terminal.sendText(`git add -A && git commit -m "${message}"`);
@@ -884,7 +1317,10 @@ I WILL EXECUTE these tasks automatically. ALWAYS use the exact syntax above!`;
     }
   }
 
-  private async executeShellCommand(command: string): Promise<void> {
+  private async executeShellCommand(agent: AgentConfig, command: string): Promise<void> {
+    if (!this.checkCommandPermission(agent)) {
+      return;
+    }
     try {
       const terminal = vscode.window.createTerminal('AI Agent Command');
       terminal.sendText(command);
@@ -895,34 +1331,72 @@ I WILL EXECUTE these tasks automatically. ALWAYS use the exact syntax above!`;
   }
 
   // Advanced file and code manipulation methods
-  private async editFile(fileName: string, findText: string, replaceText: string): Promise<void> {
+  private async editFile(agent: AgentConfig, fileName: string, findText: string, replaceText: string): Promise<void> {
+    debugLogger.log('🔧 EDIT_FILE DEBUG: Starting file edit', { 
+      agentId: agent.id, 
+      fileName, 
+      findTextLength: findText.length,
+      replaceTextLength: replaceText.length,
+      findTextPreview: findText.substring(0, 100),
+      replaceTextPreview: replaceText.substring(0, 100)
+    });
+    
+    if (!this.checkFilePermission(agent, 'write', fileName)) {
+      debugLogger.log('🔧 EDIT_FILE DEBUG: Permission check failed');
+      return;
+    }
+    
+    debugLogger.log('🔧 EDIT_FILE DEBUG: Permission check passed');
+    
     try {
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
       if (!workspaceFolder) {
+        debugLogger.log('🔧 EDIT_FILE DEBUG: No workspace folder found');
         throw new Error('No workspace folder open');
       }
 
       const filePath = path.join(workspaceFolder.uri.fsPath, fileName);
+      debugLogger.log('🔧 EDIT_FILE DEBUG: File paths', {
+        workspacePath: workspaceFolder.uri.fsPath,
+        filePath
+      });
+      
       if (!fs.existsSync(filePath)) {
+        debugLogger.log('🔧 EDIT_FILE DEBUG: File not found', { filePath });
         throw new Error(`File not found: ${fileName}`);
       }
 
       let content = fs.readFileSync(filePath, 'utf8');
+      debugLogger.log('🔧 EDIT_FILE DEBUG: File read successfully', {
+        contentLength: content.length,
+        contentPreview: content.substring(0, 200)
+      });
       
       // Perform find and replace
       if (content.includes(findText)) {
+        debugLogger.log('🔧 EDIT_FILE DEBUG: Find text found, performing replacement');
         content = content.replace(new RegExp(this.escapeRegExp(findText), 'g'), replaceText);
         fs.writeFileSync(filePath, content, 'utf8');
+        debugLogger.log('🔧 EDIT_FILE DEBUG: File edit successful');
         vscode.window.showInformationMessage(`Updated file: ${fileName}`);
       } else {
+        debugLogger.log('🔧 EDIT_FILE DEBUG: Find text not found in file', {
+          contentLength: content.length,
+          findText: findText.substring(0, 200),
+          contentSample: content.substring(0, 500)
+        });
         vscode.window.showWarningMessage(`Text not found in ${fileName}: "${findText.substring(0, 50)}..."`);
       }
     } catch (error) {
+      debugLogger.log('🔧 EDIT_FILE DEBUG: File edit failed', { error });
       vscode.window.showErrorMessage(`Failed to edit file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  private async readFile(fileName: string): Promise<string> {
+  private async readFile(agent: AgentConfig, fileName: string): Promise<string> {
+    if (!this.checkFilePermission(agent, 'read', fileName)) {
+      return '';
+    }
     try {
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
       if (!workspaceFolder) {
@@ -1016,7 +1490,10 @@ I WILL EXECUTE these tasks automatically. ALWAYS use the exact syntax above!`;
     }
   }
 
-  private async deleteFile(fileName: string): Promise<void> {
+  private async deleteFile(agent: AgentConfig, fileName: string): Promise<void> {
+    if (!this.checkFilePermission(agent, 'write', fileName)) {
+      return;
+    }
     try {
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
       if (!workspaceFolder) {

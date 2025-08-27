@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { App } from '@/webview/App';
 
@@ -62,8 +62,16 @@ describe('App - Core UI Functions', () => {
     });
   });
 
+  beforeEach(() => {
+    // Clear duplicate message detection for each test
+    (window as any).appRecentMessages = [];
+  });
+
   const sendMessage = (message: any) => {
     act(() => {
+      // Clear any duplicate message detection to avoid interference
+      (window as any).appRecentMessages = [];
+      
       const event = new MessageEvent('message', { data: message });
       messageListeners.forEach(listener => listener(event));
     });
@@ -114,9 +122,14 @@ describe('App - Core UI Functions', () => {
   });
 
   describe('Header Actions', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       render(<App />);
       sendMessage({ type: 'init', data: { agents: [] } });
+      
+      // Wait for loading to complete
+      await waitFor(() => {
+        expect(screen.queryByText('Loading AI Agents...')).not.toBeInTheDocument();
+      });
     });
 
     it('should have create agent button', () => {
@@ -145,9 +158,14 @@ describe('App - Core UI Functions', () => {
   });
 
   describe('Message Handling', () => {
-    it('should handle show quick chat message', () => {
+    it('should handle show quick chat message', async () => {
       render(<App />);
       sendMessage({ type: 'init', data: { agents: [] } });
+      
+      // Wait for loading to complete
+      await waitFor(() => {
+        expect(screen.queryByText('Loading AI Agents...')).not.toBeInTheDocument();
+      });
       
       sendMessage({
         type: 'showQuickChat',

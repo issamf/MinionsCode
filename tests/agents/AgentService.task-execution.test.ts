@@ -1,5 +1,5 @@
 import { AgentService } from '@/agents/AgentService';
-import { AgentConfig, AgentType, AIProvider } from '@/shared/types';
+import { AgentConfig, AgentType, AIProvider, PermissionType } from '@/shared/types';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 
@@ -88,7 +88,12 @@ describe('AgentService - Task Execution', () => {
       },
       systemPrompt: 'You are a test agent',
       capabilities: [],
-      permissions: [],
+      permissions: [
+        { type: PermissionType.READ_FILES, granted: true },
+        { type: PermissionType.WRITE_FILES, granted: true },
+        { type: PermissionType.EXECUTE_COMMANDS, granted: true },
+        { type: PermissionType.GIT_OPERATIONS, granted: true }
+      ],
       contextScope: {
         includeFiles: true,
         includeGit: true,
@@ -111,40 +116,8 @@ describe('AgentService - Task Execution', () => {
     mockFs.readFileSync.mockReturnValue('Hello World');
   });
 
-  describe('Task Detection', () => {
-    it('should detect file creation tasks', () => {
-      // Access the private method through any casting for testing
-      const service = agentService as any;
-      const result = service.analyzeForTasks('create a file test.txt with content', AgentType.CUSTOM);
-      
-      expect(result.hasTasks).toBe(true);
-      expect(result.tasks).toContain('file_operations');
-    });
-
-    it('should detect file editing tasks', () => {
-      const service = agentService as any;
-      const result = service.analyzeForTasks('change the content of the file', AgentType.CUSTOM);
-      
-      expect(result.hasTasks).toBe(true);
-      expect(result.tasks).toContain('file_operations');
-    });
-
-    it('should detect file modification variations', () => {
-      const service = agentService as any;
-      const testCases = [
-        'update file content',
-        'modify the file',
-        'edit content',
-        'replace text in file',
-      ];
-
-      testCases.forEach(message => {
-        const result = service.analyzeForTasks(message, AgentType.CUSTOM);
-        expect(result.hasTasks).toBe(true);
-        expect(result.tasks).toContain('file_operations');
-      });
-    });
-  });
+  // Task Detection is now handled by AI-powered IntentClassificationService
+  // These tests are replaced by integration tests that verify actual task execution
 
   describe('File Creation Tasks', () => {
     it('should execute CREATE_FILE task', async () => {
@@ -178,6 +151,29 @@ Content
       expect(mockFs.mkdirSync).toHaveBeenCalledWith(
         '/test/workspace/subfolder',
         { recursive: true }
+      );
+    });
+
+    it('should handle empty CREATE_FILE by adding default content', async () => {
+      const service = agentService as any;
+      const response = `[CREATE_FILE: thought_log.txt]
+[/CREATE_FILE]`;
+
+      await service.executeTasksFromResponse(mockAgent, response);
+
+      // Should create file with default content, not empty file
+      expect(mockFs.writeFileSync).toHaveBeenCalledWith(
+        '/test/workspace/thought_log.txt',
+        expect.stringContaining('THOUGHT LOG'),
+        'utf8'
+      );
+      expect(mockFs.writeFileSync).toHaveBeenCalledWith(
+        '/test/workspace/thought_log.txt',
+        expect.stringContaining('Created on:'),
+        'utf8'
+      );
+      expect(mockVscode.window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('(with default content - original was empty)')
       );
     });
   });
@@ -346,18 +342,20 @@ Content 2
 
   describe('No Tasks Found', () => {
     it('should log when no tasks are found in response', async () => {
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      // Import debugLogger to spy on it
+      const { debugLogger } = require('@/utils/logger');
+      const debugLoggerSpy = jest.spyOn(debugLogger, 'log').mockImplementation();
       
       const service = agentService as any;
       const response = `This is just a regular response without any task syntax.`;
 
       await service.executeTasksFromResponse(mockAgent, response);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(debugLoggerSpy).toHaveBeenCalledWith(
         expect.stringContaining('NO TASKS FOUND IN RESPONSE')
       );
       
-      consoleSpy.mockRestore();
+      debugLoggerSpy.mockRestore();
     });
   });
 });

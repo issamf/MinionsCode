@@ -32,6 +32,35 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // 🚨 REACT COMPONENT DEBUGGING
+  const renderCount = React.useRef(0);
+  renderCount.current++;
+  
+  React.useEffect(() => {
+    console.log('🔄 AGENTWIDGET RENDERED:', {
+      agentId: agent.id,
+      agentName: agent.name,
+      renderCount: renderCount.current,
+      messageCount: messages.length,
+      isLoading,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  // Track message state changes
+  React.useEffect(() => {
+    console.log('📝 MESSAGES STATE CHANGED:', {
+      agentId: agent.id,
+      messageCount: messages.length,
+      lastMessagePreview: messages.length > 0 ? {
+        id: messages[messages.length - 1].id,
+        isUser: messages[messages.length - 1].isUser,
+        contentPreview: messages[messages.length - 1].content.substring(0, 50)
+      } : null,
+      timestamp: new Date().toISOString()
+    });
+  }, [messages, agent.id]);
   const [sharedContext, setSharedContext] = useState<SharedContext>({ files: [], textSnippets: [] });
   const [isDragOver, setIsDragOver] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -101,6 +130,44 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
   useEffect(() => {
     const messageHandler = (event: MessageEvent) => {
       const message = event.data;
+      
+      // 🚨 COMPREHENSIVE MESSAGE DEBUGGING
+      if (message.data?.agentId === agent.id) {
+        console.log('🔍 AGENTWIDGET MESSAGE RECEIVED:', {
+          agentId: agent.id,
+          agentName: agent.name,
+          messageType: message.type,
+          timestamp: new Date().toISOString(),
+          messageData: {
+            done: message.data?.done,
+            responseLength: message.data?.response?.length,
+            responsePreview: message.data?.response?.substring(0, 100),
+            source: message.data?.source,
+            thinking: message.data?.thinking
+          }
+        });
+        
+        // Check for potential message loops
+        const messageKey = `${message.type}-${message.data?.agentId}-${message.data?.done}-${message.data?.response?.substring(0, 50)}`;
+        const recentMessages = (window as any).recentMessages = (window as any).recentMessages || [];
+        
+        if (recentMessages.includes(messageKey)) {
+          console.error('🚨 DUPLICATE MESSAGE DETECTED IN REACT!', {
+            agentId: agent.id,
+            messageType: message.type,
+            messageKey: messageKey.substring(0, 100),
+            recentCount: recentMessages.length
+          });
+          // Don't process duplicate messages
+          return;
+        }
+        
+        // Store message key for duplicate detection (keep last 10)
+        recentMessages.push(messageKey);
+        if (recentMessages.length > 10) {
+          recentMessages.shift();
+        }
+      }
       
       if (message.type === 'conversationHistory' && message.data.agentId === agent.id) {
         // Convert AIMessage format to Message format
@@ -179,6 +246,22 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
             fileName: message.data.fileName
           }]
         }));
+      } else if (message.type === 'sharedChatResponse') {
+        // Handle shared chat responses (visible to all agents)
+        webviewLogger.log('AgentWidget received shared chat response', { 
+          agentId: agent.id, 
+          responseAgentId: message.data?.agentId 
+        });
+        
+        // Add shared chat message to this agent's conversation
+        if (message.data?.response) {
+          setMessages(prev => [...prev, {
+            id: `shared-${Date.now()}`,
+            content: `🌐 ${message.data.agentName || 'Agent'}: ${message.data.response}`,
+            isUser: false,
+            timestamp: new Date(message.data.timestamp || Date.now())
+          }]);
+        }
       }
     };
 
@@ -419,6 +502,36 @@ export const AgentWidget: React.FC<AgentWidgetProps> = ({
 
   const handleSendMessage = () => {
     if (!inputMessage.trim()) return;
+
+    // 🚨 TRACK USER MESSAGE SENDING
+    console.log('📤 USER SENDING MESSAGE:', {
+      agentId: agent.id,
+      agentName: agent.name,
+      messageLength: inputMessage.length,
+      messagePreview: inputMessage.substring(0, 100),
+      timestamp: new Date().toISOString()
+    });
+
+    // Check for rapid duplicate sends
+    const sendKey = `${agent.id}-${inputMessage}`;
+    const recentSends = (window as any).recentSends = (window as any).recentSends || [];
+    const now = Date.now();
+    
+    // Remove old sends (older than 5 seconds)
+    const recentSendsFiltered = recentSends.filter((send: any) => now - send.timestamp < 5000);
+    
+    if (recentSendsFiltered.some((send: any) => send.key === sendKey)) {
+      console.error('🚨 RAPID DUPLICATE SEND DETECTED!', {
+        agentId: agent.id,
+        messagePreview: inputMessage.substring(0, 50),
+        recentSendCount: recentSendsFiltered.length
+      });
+      return; // Prevent duplicate rapid sends
+    }
+    
+    // Store this send
+    recentSendsFiltered.push({ key: sendKey, timestamp: now });
+    (window as any).recentSends = recentSendsFiltered;
 
     const userMessage: Message = {
       id: Date.now().toString(),

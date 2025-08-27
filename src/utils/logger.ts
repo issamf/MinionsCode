@@ -17,10 +17,29 @@ class FileLogger {
       ? `[${timestamp}] ${message} ${JSON.stringify(data, null, 2)}\n`
       : `[${timestamp}] ${message}\n`;
     
+    // In test environment, write to test-debug.log for visibility since console might be suppressed
+    if (process.env.NODE_ENV === 'test') {
+      try {
+        const testLogPath = path.join(os.tmpdir(), 'test-debug.log');
+        fs.appendFileSync(testLogPath, `[DEBUGLOGGER] ${logEntry}`);
+      } catch (testError) {
+        // Ignore test logging errors
+      }
+    } else {
+      // Log to console only in non-test environment
+      if (data) {
+        console.log(`[${timestamp}] ${message}`, data);
+      } else {
+        console.log(`[${timestamp}] ${message}`);
+      }
+    }
+    
     try {
       fs.appendFileSync(this.logPath, logEntry);
     } catch (error) {
-      console.error('Failed to write to log file:', error);
+      if (process.env.NODE_ENV !== 'test') {
+        console.error('Failed to write to log file:', error);
+      }
     }
   }
   
