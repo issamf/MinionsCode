@@ -3,6 +3,7 @@ import { AgentManager } from './AgentManager';
 import { WebviewManager } from './WebviewManager';
 import { ContextProvider } from './ContextProvider';
 import { SettingsManager } from './SettingsManager';
+import { ModelEvaluationRunner } from '../services/ModelEvaluationRunner';
 
 let agentManager: AgentManager;
 let webviewManager: WebviewManager;
@@ -69,13 +70,85 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  const runModelEvaluationCommand = vscode.commands.registerCommand(
+    'aiAgents.runModelEvaluation',
+    async () => {
+      // Show progress notification
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'Running AI Model Evaluation',
+          cancellable: false
+        },
+        async (progress) => {
+          try {
+            progress.report({ increment: 10, message: 'Initializing evaluation system...' });
+            
+            const evaluationRunner = new ModelEvaluationRunner({
+              outputDirectory: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath 
+                ? `${vscode.workspace.workspaceFolders[0].uri.fsPath}/model-evaluation-results`
+                : undefined
+            });
+            
+            progress.report({ increment: 20, message: 'Validating setup...' });
+            
+            // Validate setup first
+            const validation = await evaluationRunner.validateSetup();
+            if (!validation.valid) {
+              throw new Error(`Setup validation failed:\n${validation.issues.join('\n')}`);
+            }
+            
+            progress.report({ increment: 30, message: 'Running model evaluation...' });
+            
+            // Run the evaluation
+            const results = await evaluationRunner.runEvaluation();
+            
+            progress.report({ increment: 100, message: 'Evaluation complete!' });
+            
+            if (results.success) {
+              const message = `✅ Model evaluation completed successfully!\n\n` +
+                `📊 Models evaluated: ${results.evaluationSummary.modelsEvaluated}\n` +
+                `📋 Scenarios run: ${results.evaluationSummary.scenariosRun}\n` +
+                `🏆 Top performer: ${results.evaluationSummary.topModel}\n` +
+                `📈 Average success rate: ${(results.evaluationSummary.avgSuccessRate * 100).toFixed(1)}%\n\n` +
+                `Reports generated:\n` +
+                `${results.reportFiles.json ? `• JSON: ${results.reportFiles.json}\n` : ''}` +
+                `${results.reportFiles.markdown ? `• Markdown: ${results.reportFiles.markdown}\n` : ''}` +
+                `${results.reportFiles.judgePrompt ? `• Judge Prompt: ${results.reportFiles.judgePrompt}` : ''}`;
+
+              const action = await vscode.window.showInformationMessage(
+                message,
+                'Open Reports Folder',
+                'Open Markdown Report'
+              );
+
+              if (action === 'Open Reports Folder' && results.reportFiles.json) {
+                const folderPath = require('path').dirname(results.reportFiles.json);
+                await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(folderPath), true);
+              } else if (action === 'Open Markdown Report' && results.reportFiles.markdown) {
+                const document = await vscode.workspace.openTextDocument(results.reportFiles.markdown);
+                await vscode.window.showTextDocument(document);
+              }
+            } else {
+              throw new Error(results.message);
+            }
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Model evaluation failed: ${errorMessage}`);
+          }
+        }
+      );
+    }
+  );
+
   // Add commands to context
   context.subscriptions.push(
     showPanelCommand,
     createAgentCommand,
     quickChatCommand,
     sendToAgentCommand,
-    sendSelectionToAgentCommand
+    sendSelectionToAgentCommand,
+    runModelEvaluationCommand
   );
 
   // Initialize watchers

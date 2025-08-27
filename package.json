@@ -49,6 +49,11 @@
         "command": "aiAgents.sendSelectionToAgent",
         "title": "Send Selection to Agent",
         "category": "AI Agents"
+      },
+      {
+        "command": "aiAgents.runModelEvaluation",
+        "title": "Run Model Evaluation",
+        "category": "AI Agents"
       }
     ],
     "keybindings": [
@@ -136,7 +141,10 @@
     "lint:fix": "eslint src --ext ts,tsx --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
-    "package": "vsce package"
+    "package": "vsce package",
+    "eval:validate": "node validate-evaluation-setup.js",
+    "eval:test": "node test-evaluation-real.js",
+    "eval:note": "echo \"Full evaluation system is built but requires VSCode extension context to run. Use eval:validate and eval:test to verify setup.\""
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.8.0",
@@ -162,6 +170,7 @@
     "style-loader": "^3.3.0",
     "ts-jest": "^29.1.0",
     "ts-loader": "^9.4.0",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.1.0",
     "vsce": "^2.15.0",
     "webpack": "^5.88.0",
@@ -176,6 +185,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "sqlite3": "^5.1.0",
+    "ts-node": "^10.9.2",
     "uuid": "^9.0.0",
     "zustand": "^4.4.0"
   },
