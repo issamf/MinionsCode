@@ -1,0 +1,59 @@
+{
+  "modelId": "ollama:magicoder:7b",
+  "modelName": "magicoder:7b",
+  "overallMetrics": {
+    "taskSuccessRate": 0,
+    "technicalAccuracy": 0,
+    "contextUnderstanding": 0,
+    "responseCompleteness": 0,
+    "domainKnowledgeScore": 0,
+    "codeQualityScore": 0,
+    "userSatisfactionScore": 0,
+    "responseLatency": 5
+  },
+  "scenarioResults": [
+    {
+      "scenarioId": "code-review-security",
+      "scenarioName": "Security Vulnerability Review",
+      "agentType": "code_reviewer",
+      "successRate": 0,
+      "averageLatency": 5,
+      "taskExecutionSuccess": false,
+      "errors": [
+        "Cannot access 'o' before initialization"
+      ],
+      "conversationLog": [],
+      "timeout": false,
+      "crashed": false
+    },
+    {
+      "scenarioId": "code-review-performance",
+      "scenarioName": "Performance Optimization Review",
+      "agentType": "code_reviewer",
+      "successRate": 0,
+      "averageLatency": 5,
+      "taskExecutionSuccess": false,
+      "errors": [
+        "Cannot access 'o' before initialization"
+      ],
+      "conversationLog": [],
+      "timeout": false,
+      "crashed": false
+    },
+    {
+      "scenarioId": "api-documentation",
+      "scenarioName": "API Documentation Generation",
+      "agentType": "documentation",
+      "successRate": 0,
+      "averageLatency": 5,
+      "taskExecutionSuccess": false,
+      "errors": [
+        "Cannot access 'o' before initialization"
+      ],
+      "conversationLog": [],
+      "timeout": false,
+      "crashed": false
+    }
+  ],
+  "totalDuration": 16360
+}

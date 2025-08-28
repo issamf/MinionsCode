@@ -1,0 +1,78 @@
+{
+  "timestamp": "2025-08-28T15:14:28.381Z",
+  "summary": {
+    "totalModels": 3,
+    "successfulModels": 3,
+    "failedModels": 0,
+    "skippedModels": 0,
+    "successRate": "100.0%"
+  },
+  "modelResults": [
+    {
+      "modelId": "ollama:magicoder:7b",
+      "modelName": "magicoder:7b",
+      "success": true,
+      "skipped": false,
+      "totalDuration": 347580,
+      "retryCount": 0,
+      "scenarioCount": 3,
+      "overallMetrics": {
+        "taskSuccessRate": 0.3333333333333333,
+        "technicalAccuracy": 0.5333333333333333,
+        "contextUnderstanding": 0.6999999999999998,
+        "responseCompleteness": 0.8000000000000002,
+        "domainKnowledgeScore": 0.6,
+        "codeQualityScore": 0.6999999999999998,
+        "userSatisfactionScore": 0.6777777777777777,
+        "responseLatency": 115731.66666666667
+      }
+    },
+    {
+      "modelId": "ollama:dolphin-mistral:7b",
+      "modelName": "dolphin-mistral:7b",
+      "success": true,
+      "skipped": false,
+      "totalDuration": 150259,
+      "retryCount": 0,
+      "scenarioCount": 3,
+      "overallMetrics": {
+        "taskSuccessRate": 0.6666666666666666,
+        "technicalAccuracy": 0.6666666666666666,
+        "contextUnderstanding": 0.6999999999999998,
+        "responseCompleteness": 0.8000000000000002,
+        "domainKnowledgeScore": 0.6,
+        "codeQualityScore": 0.6999999999999998,
+        "userSatisfactionScore": 0.7222222222222222,
+        "responseLatency": 49891.666666666664
+      }
+    },
+    {
+      "modelId": "ollama:codellama:7b",
+      "modelName": "codellama:7b",
+      "success": true,
+      "skipped": false,
+      "totalDuration": 237980,
+      "retryCount": 0,
+      "scenarioCount": 3,
+      "overallMetrics": {
+        "taskSuccessRate": 0.6666666666666666,
+        "technicalAccuracy": 0.6666666666666666,
+        "contextUnderstanding": 0.6999999999999998,
+        "responseCompleteness": 0.8000000000000002,
+        "domainKnowledgeScore": 0.6,
+        "codeQualityScore": 0.6999999999999998,
+        "userSatisfactionScore": 0.7222222222222222,
+        "responseLatency": 79210.66666666667
+      }
+    }
+  ],
+  "configuration": {
+    "timeout": 120000,
+    "maxRetries": 3,
+    "retryDelay": 1000,
+    "includeOnlineModels": true,
+    "outputDirectory": "c:\\Projects\\apes-foundation\\CompanAI.local.v1",
+    "enableLivePreview": true,
+    "enableFailsafeMode": true
+  }
+}

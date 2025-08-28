@@ -122,7 +122,13 @@ export const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({
   // };
 
   return (
-    <div className="evaluation-dashboard" style={{ padding: '20px', fontFamily: 'monospace' }}>
+    <div className="evaluation-dashboard" style={{ 
+      padding: '20px', 
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      backgroundColor: 'var(--vscode-editor-background)',
+      color: 'var(--vscode-editor-foreground)',
+      minHeight: '100vh'
+    }}>
       {/* Header */}
       <div style={{ marginBottom: '20px', borderBottom: '2px solid #333', paddingBottom: '10px' }}>
         <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 'bold' }}>
@@ -140,13 +146,16 @@ export const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({
             key={tab}
             onClick={() => setActiveTab(tab)}
             style={{
-              padding: '8px 16px',
+              padding: '10px 20px',
               marginRight: '8px',
-              border: '1px solid #333',
-              background: activeTab === tab ? '#333' : 'transparent',
-              color: activeTab === tab ? 'white' : '#333',
+              border: '1px solid var(--vscode-panel-border)',
+              background: activeTab === tab ? 'var(--vscode-button-background)' : 'var(--vscode-button-secondaryBackground)',
+              color: activeTab === tab ? 'var(--vscode-button-foreground)' : 'var(--vscode-button-secondaryForeground)',
               cursor: 'pointer',
-              textTransform: 'capitalize'
+              textTransform: 'capitalize',
+              borderRadius: '4px',
+              fontSize: '14px',
+              fontWeight: activeTab === tab ? 'bold' : 'normal'
             }}
           >
             {tab === 'setup' && '⚙️'} 
@@ -335,24 +344,33 @@ export const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({
             </div>
 
             {/* Current Status */}
-            <div style={{ marginBottom: '20px', padding: '10px', background: '#f5f5f5', borderRadius: '4px' }}>
-              <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '5px' }}>
-                Status: <span style={{ 
-                  color: currentProgress?.status === 'running' ? '#00aa44' : 
-                         currentProgress?.status === 'error' ? '#ff4444' : '#666' 
-                }}>
-                  {currentProgress?.status?.toUpperCase()}
-                </span>
-              </div>
-              <div style={{ fontSize: '12px', marginBottom: '5px' }}>
-                {currentProgress?.currentActivity}
-              </div>
-              {currentProgress?.lastOutput && (
-                <div style={{ fontSize: '11px', color: '#666', fontFamily: 'monospace' }}>
-                  Last Output: {currentProgress?.lastOutput}
+            {currentProgress && (
+              <div style={{ 
+                marginBottom: '20px', 
+                padding: '10px', 
+                background: 'var(--vscode-textBlockQuote-background)', 
+                border: '1px solid var(--vscode-panel-border)',
+                borderRadius: '4px' 
+              }}>
+                <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '5px', color: 'var(--vscode-foreground)' }}>
+                  Status: <span style={{ 
+                    color: currentProgress.status === 'running' ? '#00aa44' : 
+                           currentProgress.status === 'error' ? '#ff4444' : 
+                           currentProgress.status === 'completed' ? '#00aa44' : 'var(--vscode-descriptionForeground)'
+                  }}>
+                    {currentProgress.status?.toUpperCase() || 'READY'}
+                  </span>
                 </div>
-              )}
-            </div>
+                <div style={{ fontSize: '12px', marginBottom: '5px', color: 'var(--vscode-foreground)' }}>
+                  {currentProgress.currentActivity || 'No active evaluation'}
+                </div>
+                {currentProgress.lastOutput && (
+                  <div style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)', fontFamily: 'monospace' }}>
+                    Last Output: {currentProgress.lastOutput}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Current Model/Scenario */}
             {currentProgress?.currentModel && (
@@ -412,11 +430,55 @@ export const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({
                     borderRadius: '4px',
                     cursor: 'pointer',
                     fontSize: '14px',
-                    fontWeight: 'bold'
+                    fontWeight: 'bold',
+                    marginRight: '10px'
                   }}
                 >
                   ⏹️ Stop Evaluation
                 </button>
+              )}
+              
+              {!isRunning && currentProgress?.status === 'cancelled' && (
+                <div style={{
+                  padding: '10px 20px',
+                  background: 'var(--vscode-button-secondaryBackground)',
+                  color: 'var(--vscode-foreground)',
+                  border: '1px solid var(--vscode-panel-border)',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  marginRight: '10px'
+                }}>
+                  ⏸️ Evaluation Stopped
+                </div>
+              )}
+              
+              {!isRunning && currentProgress?.status === 'completed' && (
+                <div style={{ 
+                  padding: '10px 20px',
+                  background: '#00aa44',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                  display: 'inline-block'
+                }}>
+                  ✅ Evaluation Completed
+                </div>
+              )}
+              
+              {!isRunning && currentProgress && currentProgress.status !== 'completed' && currentProgress.status !== 'cancelled' && (
+                <div style={{ 
+                  padding: '10px 20px',
+                  background: '#444',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                  display: 'inline-block'
+                }}>
+                  ⏸️ Evaluation Stopped
+                </div>
               )}
               
               {currentProgress?.canResume && !isRunning && (
@@ -440,36 +502,46 @@ export const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({
           </div>
 
           {/* Statistics Sidebar */}
-          <div style={{ border: '1px solid #333', padding: '15px' }}>
+          <div style={{ border: '1px solid var(--vscode-panel-border)', padding: '15px' }}>
             <h3 style={{ margin: '0 0 15px 0' }}>📈 Statistics</h3>
             
-            <div style={{ marginBottom: '15px' }}>
-              <div style={{ fontSize: '12px', color: '#666' }}>Models</div>
-              <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
-                {currentProgress?.completedModels} / {currentProgress?.totalModels}
-              </div>
-            </div>
+            {currentProgress ? (
+              <>
+                <div style={{ marginBottom: '15px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--vscode-descriptionForeground)' }}>Models</div>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
+                    {currentProgress.completedModels || 0} / {currentProgress.totalModels || 0}
+                  </div>
+                </div>
 
-            <div style={{ marginBottom: '15px' }}>
-              <div style={{ fontSize: '12px', color: '#666' }}>Success Rate</div>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#00aa44' }}>
-                {currentProgress?.successfulModels}
-              </div>
-            </div>
+                <div style={{ marginBottom: '15px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--vscode-descriptionForeground)' }}>Success Rate</div>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#00aa44' }}>
+                    {currentProgress.successfulModels || 0}
+                  </div>
+                </div>
 
-            <div style={{ marginBottom: '15px' }}>
-              <div style={{ fontSize: '12px', color: '#666' }}>Failed</div>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ff4444' }}>
-                {currentProgress?.failedModels}
-              </div>
-            </div>
+                <div style={{ marginBottom: '15px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--vscode-descriptionForeground)' }}>Failed</div>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ff4444' }}>
+                    {currentProgress.failedModels || 0}
+                  </div>
+                </div>
 
-            <div style={{ marginBottom: '15px' }}>
-              <div style={{ fontSize: '12px', color: '#666' }}>Skipped</div>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ff8800' }}>
-                {currentProgress?.skippedModels}
+                <div style={{ marginBottom: '15px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--vscode-descriptionForeground)' }}>Skipped</div>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ff8800' }}>
+                    {currentProgress.skippedModels || 0}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: '14px', color: 'var(--vscode-descriptionForeground)', textAlign: 'center', padding: '20px' }}>
+                No evaluation data yet.
+                <br />
+                Start an evaluation to see statistics.
               </div>
-            </div>
+            )}
 
             <div style={{ marginBottom: '15px' }}>
               <div style={{ fontSize: '12px', color: '#666' }}>Elapsed Time</div>
@@ -514,12 +586,27 @@ export const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({
 
       {/* Live Preview Tab */}
       {activeTab === 'preview' && (
-        <div style={{ height: '600px', border: '1px solid #333', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '15px', borderBottom: '1px solid #333', background: '#f5f5f5' }}>
-            <h3 style={{ margin: 0 }}>
+        <div style={{ 
+          height: '600px', 
+          border: '1px solid var(--vscode-panel-border)', 
+          display: 'flex', 
+          flexDirection: 'column',
+          background: 'var(--vscode-editor-background)'
+        }}>
+          <div style={{ 
+            padding: '15px', 
+            borderBottom: '1px solid var(--vscode-panel-border)', 
+            background: 'var(--vscode-sideBar-background)' 
+          }}>
+            <h3 style={{ margin: 0, color: 'var(--vscode-foreground)' }}>
               👁️ Live Conversation Preview
               {livePreview && (
-                <span style={{ fontSize: '14px', fontWeight: 'normal', marginLeft: '10px' }}>
+                <span style={{ 
+                  fontSize: '14px', 
+                  fontWeight: 'normal', 
+                  marginLeft: '10px',
+                  color: 'var(--vscode-descriptionForeground)'
+                }}>
                   {livePreview.modelName} • {livePreview.scenarioName}
                   {livePreview.isStreaming && <span style={{ color: '#00aa44' }}> • 🔄 Streaming...</span>}
                 </span>
@@ -527,43 +614,81 @@ export const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({
             </h3>
           </div>
           
-          <div style={{ flex: 1, padding: '15px', overflowY: 'auto', fontFamily: 'monospace', fontSize: '12px' }}>
+          <div style={{ 
+            flex: 1, 
+            padding: '15px', 
+            overflowY: 'auto', 
+            fontFamily: 'var(--vscode-editor-font-family)', 
+            fontSize: '12px',
+            background: 'var(--vscode-editor-background)',
+            color: 'var(--vscode-editor-foreground)'
+          }}>
             {livePreview ? (
               <div>
-                <div style={{ marginBottom: '20px', padding: '10px', background: '#e8f4fd', borderRadius: '4px' }}>
-                  <strong>Model:</strong> {livePreview.modelName}<br />
-                  <strong>Scenario:</strong> {livePreview.scenarioName}<br />
-                  <strong>Updated:</strong> {new Date(livePreview.timestamp).toLocaleTimeString()}
+                <div style={{ 
+                  marginBottom: '20px', 
+                  padding: '10px', 
+                  background: 'var(--vscode-textBlockQuote-background)', 
+                  borderRadius: '4px',
+                  border: '1px solid var(--vscode-panel-border)'
+                }}>
+                  <strong style={{ color: 'var(--vscode-foreground)' }}>Model:</strong> <span style={{ color: 'var(--vscode-descriptionForeground)' }}>{livePreview.modelName}</span><br />
+                  <strong style={{ color: 'var(--vscode-foreground)' }}>Scenario:</strong> <span style={{ color: 'var(--vscode-descriptionForeground)' }}>{livePreview.scenarioName}</span><br />
+                  <strong style={{ color: 'var(--vscode-foreground)' }}>Updated:</strong> <span style={{ color: 'var(--vscode-descriptionForeground)' }}>{new Date(livePreview.timestamp).toLocaleTimeString()}</span>
                 </div>
                 
-                <div style={{ background: '#f8f8f8', padding: '15px', borderRadius: '4px', whiteSpace: 'pre-wrap' }}>
+                <div style={{ 
+                  background: 'var(--vscode-editor-background)', 
+                  padding: '15px', 
+                  borderRadius: '4px', 
+                  whiteSpace: 'pre-wrap',
+                  border: '1px solid var(--vscode-panel-border)'
+                }}>
                   {livePreview.conversation.map((turn, index) => (
                     <div key={index} style={{ 
                       marginBottom: '15px',
                       padding: '10px',
-                      background: turn.role === 'user' ? '#e6f3ff' : '#f0f8e6',
+                      background: turn.role === 'user' 
+                        ? 'var(--vscode-diffEditor-insertedTextBackground)' 
+                        : 'var(--vscode-diffEditor-removedTextBackground)',
                       borderRadius: '4px',
-                      borderLeft: `4px solid ${turn.role === 'user' ? '#007acc' : '#00aa44'}`
+                      borderLeft: `4px solid ${turn.role === 'user' ? 'var(--vscode-charts-blue)' : 'var(--vscode-charts-green)'}`,
+                      color: 'var(--vscode-foreground)'
                     }}>
-                      <div style={{ fontWeight: 'bold', marginBottom: '5px', textTransform: 'uppercase' }}>
+                      <div style={{ 
+                        fontWeight: 'bold', 
+                        marginBottom: '5px', 
+                        textTransform: 'uppercase',
+                        color: 'var(--vscode-foreground)'
+                      }}>
                         {turn.role === 'user' ? '👤 USER' : '🤖 AGENT'}
                       </div>
-                      <div>{turn.message}</div>
+                      <div style={{ 
+                        color: 'var(--vscode-foreground)',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        maxHeight: '300px',
+                        overflowY: 'auto',
+                        fontFamily: turn.message.includes('```') ? 'var(--vscode-editor-font-family)' : 'inherit'
+                      }}>
+                        {turn.message}
+                      </div>
                     </div>
                   ))}
                   
-                  {livePreview.currentResponse && livePreview.isStreaming && (
+                  {livePreview.currentResponse && (
                     <div style={{ 
                       marginTop: '15px',
                       padding: '10px',
-                      background: '#f0f8e6',
+                      background: 'var(--vscode-diffEditor-removedTextBackground)',
                       borderRadius: '4px',
-                      borderLeft: '4px solid #00aa44'
+                      borderLeft: '4px solid var(--vscode-charts-green)',
+                      color: 'var(--vscode-foreground)'
                     }}>
-                      <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
-                        🤖 AGENT {livePreview.isStreaming && <span style={{ color: '#00aa44' }}>(Streaming...)</span>}
+                      <div style={{ fontWeight: 'bold', marginBottom: '5px', color: 'var(--vscode-foreground)' }}>
+                        🤖 AGENT {livePreview.isStreaming && <span style={{ color: 'var(--vscode-charts-green)' }}>(Streaming...)</span>}
                       </div>
-                      <div>{livePreview.currentResponse}</div>
+                      <div style={{ color: 'var(--vscode-foreground)' }}>{livePreview.currentResponse}</div>
                     </div>
                   )}
                 </div>

@@ -1,0 +1,15 @@
+=== AI Model Evaluation Report ===
+Generated: 8/28/2025, 2:09:26 PM
+
+SUMMARY:
+• Total Models Evaluated: 3
+• Successful: 0
+• Failed: 2
+• Skipped: 1
+• Success Rate: 0.0%
+
+MODEL DETAILS:
+• magicoder:7b: FAILED
+• dolphin-mistral:7b: SKIPPED
+  Reason: Model not available or not responding
+• codellama:7b: FAILED

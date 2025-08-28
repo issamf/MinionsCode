@@ -11,6 +11,7 @@ export class WebviewManager {
   private contextProvider: ContextProvider;
   private agentService: AgentService;
   private panel: vscode.WebviewPanel | null = null;
+  private evaluationPanel: vscode.WebviewPanel | null = null;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -1108,6 +1109,14 @@ Use the appropriate task syntax based on what you find.`;
   }
 
   public async showEvaluationDashboard(): Promise<void> {
+    // Reuse existing evaluation panel if it exists and is still active
+    if (this.evaluationPanel) {
+      this.evaluationPanel.reveal(vscode.ViewColumn.One);
+      // Refresh the dashboard state
+      await this.initializeEvaluationDashboard(this.evaluationPanel);
+      return;
+    }
+    
     // Create a separate panel for evaluation dashboard
     const evaluationPanel = vscode.window.createWebviewPanel(
       'aiAgentsEvaluation',
@@ -1115,12 +1124,21 @@ Use the appropriate task syntax based on what you find.`;
       vscode.ViewColumn.One,
       {
         enableScripts: true,
+        retainContextWhenHidden: true,
         localResourceRoots: [
           vscode.Uri.joinPath(this.context.extensionUri, 'out'),
           vscode.Uri.joinPath(this.context.extensionUri, 'resources')
         ]
       }
     );
+    
+    // Store reference to the panel
+    this.evaluationPanel = evaluationPanel;
+    
+    // Clean up when panel is disposed
+    evaluationPanel.onDidDispose(() => {
+      this.evaluationPanel = null;
+    });
 
     // Set up the webview content for evaluation dashboard
     evaluationPanel.webview.html = this.getEvaluationDashboardHTML(evaluationPanel.webview);
@@ -1167,7 +1185,7 @@ Use the appropriate task syntax based on what you find.`;
 
   private getEvaluationDashboardHTML(webview: vscode.Webview): string {
     // Get the local path to main script run in the webview
-    const scriptPathOnDisk = vscode.Uri.joinPath(this.context.extensionUri, 'out', 'webview', 'evaluation.js');
+    const scriptPathOnDisk = vscode.Uri.joinPath(this.context.extensionUri, 'out', 'webview', 'webview.js');
     const scriptUri = webview.asWebviewUri(scriptPathOnDisk);
     
     const stylePathOnDisk = vscode.Uri.joinPath(this.context.extensionUri, 'out', 'webview', 'styles.css');
@@ -1215,7 +1233,7 @@ Use the appropriate task syntax based on what you find.`;
         </style>
     </head>
     <body>
-        <div id="evaluation-dashboard" class="evaluation-container">
+        <div id="root" class="evaluation-container" data-view="evaluation">
           <div class="loading">
             <div>🤖 Loading AI Model Evaluation Dashboard...</div>
           </div>
@@ -1239,19 +1257,136 @@ Use the appropriate task syntax based on what you find.`;
     }
   }
 
-  private async handleStartEvaluation(_data: any, panel: vscode.WebviewPanel): Promise<void> {
-    // Implementation will be added when we integrate the EnhancedModelEvaluationRunner
-    panel.webview.postMessage({
-      type: 'evaluationStarted',
-      data: { message: 'Evaluation system integration in progress...' }
-    });
+  private async handleStartEvaluation(data: any, panel: vscode.WebviewPanel): Promise<void> {
+    try {
+      debugLogger.log('Starting evaluation with data:', data);
+      
+      // Import evaluation services
+      const { EnhancedModelEvaluationEngine } = await import('../services/EnhancedModelEvaluationEngine');
+      const { EvaluationProgressTracker } = await import('../services/EvaluationProgressTracker');
+      const { EvaluationPersistenceService } = await import('../services/EvaluationPersistenceService');
+      
+      // Create services
+      const progressTracker = new EvaluationProgressTracker();
+      const persistenceService = new EvaluationPersistenceService(this.context.extensionUri.fsPath);
+      const config = {
+        timeoutMs: 120000, // Increased to 2 minutes to match Ollama client timeout
+        maxRetries: 3,
+        retryDelay: 1000,
+        enableLivePreview: true,
+        enableFailsafeMode: true
+      };
+      
+      const evaluationEngine = new EnhancedModelEvaluationEngine(
+        this.agentService,
+        progressTracker,
+        persistenceService,
+        {
+          timeout: config.timeoutMs,
+          maxRetries: config.maxRetries,
+          retryDelay: config.retryDelay,
+          includeOnlineModels: true,
+          outputDirectory: this.context.extensionUri.fsPath,
+          enableLivePreview: config.enableLivePreview,
+          enableFailsafeMode: config.enableFailsafeMode
+        }
+      );
+
+      // Set up progress callbacks
+      progressTracker.onProgress((progress: any) => {
+        debugLogger.log('Progress update:', progress);
+        panel.webview.postMessage({
+          type: 'evaluationProgress',
+          data: progress
+        });
+      });
+
+      // Set up live preview callback
+      persistenceService.onLivePreviewUpdate((livePreview) => {
+        panel.webview.postMessage({
+          type: 'livePreview',
+          data: livePreview
+        });
+      });
+
+      // Store reference to stop evaluation later
+      (this as any).currentEvaluationEngine = evaluationEngine;
+
+      // Start evaluation
+      const { selectedModels, selectedScenarios } = data;
+      
+      debugLogger.log('Starting evaluation with:', { 
+        selectedModelsCount: selectedModels?.length || 0, 
+        selectedScenariosCount: selectedScenarios?.length || 0 
+      });
+
+      // Validate input
+      if (!selectedModels || selectedModels.length === 0) {
+        throw new Error('No models selected for evaluation');
+      }
+      if (!selectedScenarios || selectedScenarios.length === 0) {
+        throw new Error('No scenarios selected for evaluation');
+      }
+
+      panel.webview.postMessage({
+        type: 'evaluationStarted',
+        data: { message: 'Starting evaluation...', modelsCount: selectedModels.length, scenariosCount: selectedScenarios.length }
+      });
+
+      // Run evaluation (this will be async)
+      evaluationEngine.evaluateModels(selectedModels, selectedScenarios)
+        .then((results: any) => {
+          panel.webview.postMessage({
+            type: 'evaluationCompleted',
+            data: { results, message: 'Evaluation completed successfully' }
+          });
+        })
+        .catch((error: any) => {
+          console.error('Evaluation failed:', error);
+          panel.webview.postMessage({
+            type: 'evaluationError',
+            data: { error: error.message, message: 'Evaluation failed' }
+          });
+        });
+
+    } catch (error) {
+      console.error('Failed to start evaluation:', error);
+      panel.webview.postMessage({
+        type: 'evaluationError',
+        data: { error: error instanceof Error ? error.message : String(error) }
+      });
+    }
   }
 
   private async handleStopEvaluation(panel: vscode.WebviewPanel): Promise<void> {
-    panel.webview.postMessage({
-      type: 'evaluationStopped',
-      data: { message: 'Stop functionality will be implemented with runner integration' }
-    });
+    try {
+      debugLogger.log('Stopping evaluation');
+      
+      // Get the current evaluation engine if it exists
+      const evaluationEngine = (this as any).currentEvaluationEngine;
+      
+      if (evaluationEngine && typeof evaluationEngine.cancelEvaluation === 'function') {
+        await evaluationEngine.cancelEvaluation();
+        debugLogger.log('Evaluation cancelled successfully');
+      } else {
+        debugLogger.log('No active evaluation to cancel');
+      }
+
+      panel.webview.postMessage({
+        type: 'evaluationStopped',
+        data: { message: 'Evaluation stopped successfully' }
+      });
+      
+      // Clear the reference
+      (this as any).currentEvaluationEngine = null;
+      
+    } catch (error) {
+      console.error('Failed to stop evaluation:', error);
+      panel.webview.postMessage({
+        type: 'evaluationError',
+        data: { error: error instanceof Error ? error.message : 'Failed to stop evaluation' }
+      });
+    }
   }
 
   private async handleResumeEvaluation(sessionId: string, panel: vscode.WebviewPanel): Promise<void> {
@@ -1263,39 +1398,41 @@ Use the appropriate task syntax based on what you find.`;
 
   private async handleGetEvaluationModels(panel: vscode.WebviewPanel): Promise<void> {
     try {
-      // For now, return mock data - will be replaced with actual model discovery
-      const mockModels = [
-        { id: 'deepseek-coder:6.7b', name: 'DeepSeek Coder 6.7B', type: 'local', specialization: 'coding' },
-        { id: 'llama3.2:3b', name: 'Llama 3.2 3B', type: 'local', specialization: 'general' },
-        { id: 'codellama:7b', name: 'Code Llama 7B', type: 'local', specialization: 'coding' },
-      ];
+      // Use the existing ModelDiscoveryService to get real available models
+      const { ModelDiscoveryService } = await import('../services/ModelDiscoveryService');
+      const modelDiscovery = new ModelDiscoveryService();
+      
+      // Get all available models (local + online if configured)
+      const availableModels = await modelDiscovery.getAllAvailableModels();
       
       panel.webview.postMessage({
         type: 'availableModels',
-        data: mockModels
+        data: availableModels
       });
     } catch (error) {
+      console.error('Failed to discover models:', error);
       panel.webview.postMessage({
         type: 'error',
-        data: { message: `Failed to get models: ${error instanceof Error ? error.message : String(error)}` }
+        data: { message: `Failed to discover models: ${error instanceof Error ? error.message : String(error)}` }
       });
     }
   }
 
   private async handleGetEvaluationScenarios(panel: vscode.WebviewPanel): Promise<void> {
     try {
-      // For now, return mock data - will be replaced with actual scenario service
-      const mockScenarios = [
-        { id: 'code-review', name: 'Code Review', agentType: 'CODE_REVIEWER', conversation: [{ role: 'user', message: 'Review this code' }] },
-        { id: 'documentation', name: 'Documentation Writing', agentType: 'DOCUMENTATION', conversation: [{ role: 'user', message: 'Write documentation' }] },
-        { id: 'debugging', name: 'Bug Fix', agentType: 'SOFTWARE_ENGINEER', conversation: [{ role: 'user', message: 'Fix this bug' }] },
-      ];
+      // Use the existing EvaluationScenarioService to get real scenarios
+      const { EvaluationScenarioService } = await import('../services/EvaluationScenarioService');
+      const scenarioService = new EvaluationScenarioService();
+      
+      // Get all available scenarios
+      const availableScenarios = scenarioService.getAllScenarios();
       
       panel.webview.postMessage({
         type: 'availableScenarios',
-        data: mockScenarios
+        data: availableScenarios
       });
     } catch (error) {
+      console.error('Failed to get scenarios:', error);
       panel.webview.postMessage({
         type: 'error',
         data: { message: `Failed to get scenarios: ${error instanceof Error ? error.message : String(error)}` }
@@ -1305,24 +1442,24 @@ Use the appropriate task syntax based on what you find.`;
 
   private async handleGetEvaluationSessions(panel: vscode.WebviewPanel): Promise<void> {
     try {
-      // For now, return mock data - will be replaced with actual persistence service
-      const mockSessions = [
-        {
-          sessionId: 'eval_123456',
-          startTime: new Date(Date.now() - 3600000),
-          lastUpdateTime: new Date(Date.now() - 1800000),
-          status: 'paused',
-          totalModels: 5,
-          completedModels: 2,
-          canResume: true
-        }
-      ];
+      // Use the existing EvaluationPersistenceService to get real sessions
+      // @ts-ignore - Dynamic import for future use
+      const { EvaluationPersistenceService } = await import('../services/EvaluationPersistenceService');
+      
+      // For now, return empty sessions since no evaluation has been run yet
+      // This will be populated when actual evaluations are saved
+      const availableSessions: any[] = [];
+      
+      // TODO: When we integrate the persistence service properly, we would do:
+      // const persistenceService = new EvaluationPersistenceService('./evaluation-sessions');
+      // const availableSessions = persistenceService.getAvailableSessions();
       
       panel.webview.postMessage({
         type: 'availableSessions',
-        data: mockSessions
+        data: availableSessions
       });
     } catch (error) {
+      console.error('Failed to get sessions:', error);
       panel.webview.postMessage({
         type: 'error',
         data: { message: `Failed to get sessions: ${error instanceof Error ? error.message : String(error)}` }

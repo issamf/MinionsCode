@@ -25,6 +25,11 @@ interface AgentMemory {
   sessionCount: number;
 }
 
+interface EmergencyBrakeConfig {
+  maxChunks: number;
+  maxContentLength: number;
+}
+
 export class AgentService {
   private providerManager: AIProviderManager;
   private agentMemories: Map<string, AgentMemory> = new Map();
@@ -32,9 +37,24 @@ export class AgentService {
   private context: vscode.ExtensionContext | null = null;
   private intentClassificationService: IntentClassificationService | null = null;
   private settingsManager: SettingsManager | null = null;
+  private emergencyBrakeConfig: EmergencyBrakeConfig = {
+    maxChunks: 1000,
+    maxContentLength: 100000 // 100KB default
+  };
 
   constructor() {
     this.providerManager = new AIProviderManager();
+  }
+  
+  // Configure emergency brake thresholds (useful for evaluation contexts)
+  public configureEmergencyBrake(config: Partial<EmergencyBrakeConfig>): void {
+    if (config.maxChunks !== undefined) {
+      this.emergencyBrakeConfig.maxChunks = config.maxChunks;
+    }
+    if (config.maxContentLength !== undefined) {
+      this.emergencyBrakeConfig.maxContentLength = config.maxContentLength;
+    }
+    console.log('🔧 Emergency brake configured:', this.emergencyBrakeConfig);
   }
 
   public setContext(context: vscode.ExtensionContext): void {
@@ -186,8 +206,6 @@ CRITICAL: Analyze existing file structures before editing. If a file has an unex
       // Generate streaming response with safeguards
       let accumulatedContent = '';
       let chunkCount = 0;
-      const MAX_CHUNKS = 1000; // Prevent infinite responses
-      const MAX_CONTENT_LENGTH = 100000; // Prevent extremely long responses (increased from 50KB)
       
       await this.providerManager.generateStreamingResponse(
         messages,
@@ -216,7 +234,7 @@ CRITICAL: Analyze existing file structures before editing. If a file has an unex
           const hasIncompleteTask = /\[CREATE_FILE:\s*[^\]]*$|\[EDIT_FILE:\s*[^\]]*$|\[DELETE_FILE:\s*[^\]]*$/i.test(accumulatedContent);
           
           // Emergency brake for runaway responses
-          if (chunkCount > MAX_CHUNKS || accumulatedContent.length > MAX_CONTENT_LENGTH || hasRepetitivePattern) {
+          if (chunkCount > this.emergencyBrakeConfig.maxChunks || accumulatedContent.length > this.emergencyBrakeConfig.maxContentLength || hasRepetitivePattern) {
             console.warn('🚨 EMERGENCY BRAKE: Stopping runaway response', {
               agentId: agent.id,
               chunkCount,
@@ -982,9 +1000,12 @@ IMMEDIATELY use: [EDIT_FILE: thought_log.txt] [FIND]existing text[/FIND] [REPLAC
     
     // Parse all task commands from AI response
     const patterns = {
-      fileCreate: /\[CREATE_FILE:\s*([^\]]+)\]\n([\s\S]*?)\[\/CREATE_FILE\]/g,
-      fileEdit: /\[EDIT_FILE:\s*([^\]]+)\]\n\[FIND\]([\s\S]*?)\[\/FIND\]\n\[REPLACE\]([\s\S]*?)\[\/REPLACE\]\n\[\/EDIT_FILE\]/g,
-      readFile: /\[READ_FILE:\s*([^\]]+)\]/g,
+      // Enhanced CREATE_FILE pattern: handles optional newlines, non-greedy match, case-insensitive
+      fileCreate: /\[CREATE_FILE:\s*([^\]]+)\](?:\r?\n)?([\s\S]*?)(?:\r?\n)?\[\/CREATE_FILE\]/gi,
+      // Enhanced EDIT_FILE pattern: flexible whitespace, case-insensitive
+      fileEdit: /\[EDIT_FILE:\s*([^\]]+)\](?:\r?\n)*\[FIND\]([\s\S]*?)\[\/FIND\](?:\r?\n)*\[REPLACE\]([\s\S]*?)\[\/REPLACE\](?:\r?\n)*\[\/EDIT_FILE\]/gi,
+      // Made case-insensitive for better AI response handling
+      readFile: /\[READ_FILE:\s*([^\]]+)\]/gi,
       grep: /\[GREP:\s*([^,]+),\s*([^\]]+)\]/g,
       findFiles: /\[FIND_FILES:\s*([^\]]+)\]/g,
       deleteFile: /\[DELETE_FILE:\s*([^\]]+)\]/g,
@@ -1017,8 +1038,12 @@ IMMEDIATELY use: [EDIT_FILE: thought_log.txt] [FIND]existing text[/FIND] [REPLAC
       } catch (e) { /* ignore */ }
     }
 
+    // Pre-process response to handle duplicate file creation blocks
+    // This fixes the issue where AI models generate malformed duplicate syntax
+    const processedResponse = this.deduplicateFileCreationBlocks(response);
+    
     // Execute file creation tasks
-    while ((match = patterns.fileCreate.exec(response)) !== null) {
+    while ((match = patterns.fileCreate.exec(processedResponse)) !== null) {
       // TEST DEBUG: Log pattern match
       if (process.env.NODE_ENV === 'test') {
         const fs = require('fs');
@@ -1778,5 +1803,46 @@ Add your content below:
   public async getConversationHistory(agentId: string): Promise<AIMessage[]> {
     const memory = this.agentMemories.get(agentId);
     return memory ? memory.conversations : [];
+  }
+
+  // Deduplicates malformed file creation blocks that AI models sometimes generate
+  private deduplicateFileCreationBlocks(response: string): string {
+    const { debugLogger } = require('../utils/logger');
+    
+    // Find all CREATE_FILE blocks
+    const createFilePattern = /\[CREATE_FILE:\s*([^\]]+)\]([\s\S]*?)(?=\[CREATE_FILE:|\[\/CREATE_FILE\]|$)/g;
+    const blocks = new Map<string, string>();
+    let match;
+    
+    // Extract unique blocks by filename
+    while ((match = createFilePattern.exec(response)) !== null) {
+      const fileName = match[1].trim();
+      const content = match[2].trim();
+      
+      // Keep the longest content for each filename (handles progressive duplication)
+      if (!blocks.has(fileName) || blocks.get(fileName)!.length < content.length) {
+        blocks.set(fileName, content);
+      }
+    }
+    
+    if (blocks.size > 0) {
+      debugLogger.log('🔧 DEDUPLICATION: Found file creation blocks', {
+        originalBlockCount: (response.match(/\[CREATE_FILE:/g) || []).length,
+        uniqueFiles: Array.from(blocks.keys()),
+        deduplicatedCount: blocks.size
+      });
+      
+      // Rebuild response with deduplicated blocks
+      let cleanResponse = response.replace(/\[CREATE_FILE:[\s\S]*?(?:\[\/CREATE_FILE\]|$)/g, '');
+      
+      // Add clean blocks
+      for (const [fileName, content] of blocks) {
+        cleanResponse += `\n[CREATE_FILE: ${fileName}]\n${content}\n[/CREATE_FILE]\n`;
+      }
+      
+      return cleanResponse.trim();
+    }
+    
+    return response;
   }
 }

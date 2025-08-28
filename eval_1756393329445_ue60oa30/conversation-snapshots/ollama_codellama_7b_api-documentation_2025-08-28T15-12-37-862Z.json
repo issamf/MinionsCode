@@ -1,0 +1,13 @@
+{
+  "modelId": "ollama:codellama:7b",
+  "scenarioId": "api-documentation",
+  "timestamp": "2025-08-28T15:12:37.862Z",
+  "conversation": [
+    {
+      "role": "user",
+      "message": "I need comprehensive API documentation for our user management endpoints. Can you analyze the code and create proper documentation?\n\n**userController.js:**\n```javascript\n\nconst User = require('../models/User');\n\n/**\n * Get all users\n */\nexports.getAllUsers = async (req, res) => {\n  try {\n    const users = await User.find().select('-password');\n    res.json(users);\n  } catch (error) {\n    res.status(500).json({ error: error.message });\n  }\n};\n\n/**\n * Get user by ID\n */\nexports.getUserById = async (req, res) => {\n  try {\n    const user = await User.findById(req.params.id).select('-password');\n    if (!user) {\n      return res.status(404).json({ error: 'User not found' });\n    }\n    res.json(user);\n  } catch (error) {\n    res.status(500).json({ error: error.message });\n  }\n};\n\n/**\n * Create new user\n */\nexports.createUser = async (req, res) => {\n  try {\n    const { username, email, password } = req.body;\n    const user = new User({ username, email, password });\n    await user.save();\n    res.status(201).json({ id: user._id, username: user.username, email: user.email });\n  } catch (error) {\n    res.status(400).json({ error: error.message });\n  }\n};\n\n/**\n * Update user\n */\nexports.updateUser = async (req, res) => {\n  try {\n    const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true }).select('-password');\n    if (!user) {\n      return res.status(404).json({ error: 'User not found' });\n    }\n    res.json(user);\n  } catch (error) {\n    res.status(400).json({ error: error.message });\n  }\n};\n\n/**\n * Delete user\n */\nexports.deleteUser = async (req, res) => {\n  try {\n    const user = await User.findByIdAndDelete(req.params.id);\n    if (!user) {\n      return res.status(404).json({ error: 'User not found' });\n    }\n    res.json({ message: 'User deleted successfully' });\n  } catch (error) {\n    res.status(500).json({ error: error.message });\n  }\n};\n              \n```"
+    }
+  ],
+  "currentResponse": "",
+  "isComplete": true
+}

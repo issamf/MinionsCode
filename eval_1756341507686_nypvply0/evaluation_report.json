@@ -1,0 +1,70 @@
+{
+  "timestamp": "2025-08-28T00:40:07.622Z",
+  "summary": {
+    "totalModels": 4,
+    "successfulModels": 1,
+    "failedModels": 0,
+    "skippedModels": 3,
+    "successRate": "25.0%"
+  },
+  "modelResults": [
+    {
+      "modelId": "ollama:magicoder:7b",
+      "modelName": "magicoder:7b",
+      "success": true,
+      "skipped": false,
+      "totalDuration": 34892,
+      "retryCount": 0,
+      "scenarioCount": 3,
+      "overallMetrics": {
+        "taskSuccessRate": 0,
+        "technicalAccuracy": 0,
+        "contextUnderstanding": 0,
+        "responseCompleteness": 0,
+        "domainKnowledgeScore": 0.20000000000000004,
+        "codeQualityScore": 0.3,
+        "userSatisfactionScore": 0,
+        "responseLatency": 7543.333333333333
+      }
+    },
+    {
+      "modelId": "ollama:dolphin-mistral:7b",
+      "modelName": "dolphin-mistral:7b",
+      "success": false,
+      "skipped": true,
+      "skipReason": "Model not available or not responding",
+      "totalDuration": 20224,
+      "retryCount": 0,
+      "scenarioCount": 0
+    },
+    {
+      "modelId": "ollama:codellama:7b",
+      "modelName": "codellama:7b",
+      "success": false,
+      "skipped": true,
+      "skipReason": "Model not available or not responding",
+      "totalDuration": 20365,
+      "retryCount": 0,
+      "scenarioCount": 0
+    },
+    {
+      "modelId": "ollama:qwen2.5-coder:7b",
+      "modelName": "qwen2.5-coder:7b",
+      "success": false,
+      "skipped": true,
+      "skipReason": "Model not available or not responding",
+      "totalDuration": 20366,
+      "retryCount": 0,
+      "scenarioCount": 0
+    }
+  ],
+  "configuration": {
+    "timeout": 30000,
+    "maxRetries": 3,
+    "retryDelay": 1000,
+    "includeOnlineModels": true,
+    "outputDirectory": "c:\\Projects\\apes-foundation\\CompanAI.local.v1",
+    "enableLivePreview": true,
+    "enableFailsafeMode": true
+  }
+}

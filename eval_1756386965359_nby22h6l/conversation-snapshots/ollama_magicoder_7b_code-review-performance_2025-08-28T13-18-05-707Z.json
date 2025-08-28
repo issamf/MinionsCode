@@ -1,0 +1,13 @@
+{
+  "modelId": "ollama:magicoder:7b",
+  "scenarioId": "code-review-performance",
+  "timestamp": "2025-08-28T13:18:05.707Z",
+  "conversation": [
+    {
+      "role": "user",
+      "message": "This React component is causing performance issues. Can you analyze it and suggest optimizations?\n\n**UserList.jsx:**\n```javascript\n\nimport React from 'react';\n\nconst UserList = ({ users, onUserClick }) => {\n  return (\n    <div>\n      {users.map(user => (\n        <div key={user.id} onClick={() => onUserClick(user)}>\n          <img src={user.avatar} alt={user.name} />\n          <div>\n            <h3>{user.name}</h3>\n            <p>{user.email}</p>\n            <div>{calculateUserScore(user)}</div>\n          </div>\n        </div>\n      ))}\n    </div>\n  );\n};\n\nfunction calculateUserScore(user) {\n  // Expensive calculation\n  let score = 0;\n  for (let i = 0; i < 10000; i++) {\n    score += Math.random() * user.posts.length;\n  }\n  return score;\n}\n\nexport default UserList;\n              \n```"
+    }
+  ],
+  "currentResponse": "",
+  "isComplete": true
+}

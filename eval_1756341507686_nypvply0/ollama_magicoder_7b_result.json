@@ -1,0 +1,75 @@
+{
+  "modelId": "ollama:magicoder:7b",
+  "modelName": "magicoder:7b",
+  "overallMetrics": {
+    "taskSuccessRate": 0,
+    "technicalAccuracy": 0,
+    "contextUnderstanding": 0,
+    "responseCompleteness": 0,
+    "domainKnowledgeScore": 0,
+    "codeQualityScore": 0,
+    "userSatisfactionScore": 0,
+    "responseLatency": 7543.333333333333
+  },
+  "scenarioResults": [
+    {
+      "scenarioId": "code-review-security",
+      "scenarioName": "Security Vulnerability Review",
+      "agentType": "code_reviewer",
+      "successRate": 0,
+      "averageLatency": 7547,
+      "taskExecutionSuccess": false,
+      "errors": [
+        "Scenario timed out after 30000ms"
+      ],
+      "conversationLog": [
+        {
+          "role": "user",
+          "message": "Please review this authentication function for security issues:",
+          "context": "User provides code with SQL injection and XSS vulnerabilities"
+        }
+      ],
+      "timeout": true,
+      "crashed": false
+    },
+    {
+      "scenarioId": "code-review-performance",
+      "scenarioName": "Performance Optimization Review",
+      "agentType": "code_reviewer",
+      "successRate": 0,
+      "averageLatency": 7541,
+      "taskExecutionSuccess": false,
+      "errors": [
+        "Scenario timed out after 30000ms"
+      ],
+      "conversationLog": [
+        {
+          "role": "user",
+          "message": "This React component is causing performance issues. Can you analyze it and suggest optimizations?"
+        }
+      ],
+      "timeout": true,
+      "crashed": false
+    },
+    {
+      "scenarioId": "api-documentation",
+      "scenarioName": "API Documentation Generation",
+      "agentType": "documentation",
+      "successRate": 0,
+      "averageLatency": 7542,
+      "taskExecutionSuccess": false,
+      "errors": [
+        "Scenario timed out after 30000ms"
+      ],
+      "conversationLog": [
+        {
+          "role": "user",
+          "message": "I need comprehensive API documentation for our user management endpoints. Can you analyze the code and create proper documentation?"
+        }
+      ],
+      "timeout": true,
+      "crashed": false
+    }
+  ],
+  "totalDuration": 34891
+}

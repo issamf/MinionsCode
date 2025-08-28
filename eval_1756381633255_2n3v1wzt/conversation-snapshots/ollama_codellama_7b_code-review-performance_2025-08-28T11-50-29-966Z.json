@@ -1,0 +1,13 @@
+{
+  "modelId": "ollama:codellama:7b",
+  "scenarioId": "code-review-performance",
+  "timestamp": "2025-08-28T11:50:29.966Z",
+  "conversation": [
+    {
+      "role": "user",
+      "message": "This React component is causing performance issues. Can you analyze it and suggest optimizations?"
+    }
+  ],
+  "currentResponse": "",
+  "isComplete": true
+}

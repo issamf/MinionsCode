@@ -5,6 +5,7 @@ import { CreateAgentDialog } from './components/CreateAgentDialog';
 import { AgentSettingsDialog } from './components/AgentSettingsDialog';
 import { GlobalSettings } from './components/GlobalSettings';
 import { QuickChatDialog } from './components/QuickChatDialog';
+import { EvaluationDashboardWrapper } from './components/EvaluationDashboardWrapper';
 import { webviewLogger } from './utils/webviewLogger';
 
 interface AppState {
@@ -26,6 +27,16 @@ export const App: React.FC = () => {
   console.log('=== AI AGENTS APP COMPONENT STARTING ===');
   console.log('Window object available:', typeof window);
   console.log('VSCode API available:', !!(window as any).vscode);
+  
+  // Check if we should render the evaluation dashboard
+  const rootElement = document.getElementById('root');
+  const viewType = rootElement?.getAttribute('data-view');
+  console.log('View type detected:', viewType);
+  
+  if (viewType === 'evaluation') {
+    console.log('Rendering Evaluation Dashboard');
+    return <EvaluationDashboardWrapper />;
+  }
   
   const [state, setState] = useState<AppState>({
     agents: [],

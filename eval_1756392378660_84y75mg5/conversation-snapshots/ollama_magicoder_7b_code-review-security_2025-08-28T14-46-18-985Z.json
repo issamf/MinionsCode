@@ -1,0 +1,14 @@
+{
+  "modelId": "ollama:magicoder:7b",
+  "scenarioId": "code-review-security",
+  "timestamp": "2025-08-28T14:46:18.985Z",
+  "conversation": [
+    {
+      "role": "user",
+      "message": "Please review this authentication function for security issues:\n\n**auth.js:**\n```javascript\n\nfunction authenticateUser(username, password) {\n  const query = \"SELECT * FROM users WHERE username='\" + username + \"' AND password='\" + password + \"'\";\n  const result = db.query(query);\n  if (result.length > 0) {\n    document.innerHTML = \"Welcome \" + username + \"!\";\n    return true;\n  }\n  return false;\n}\n              \n```",
+      "context": "User provides code with SQL injection and XSS vulnerabilities"
+    }
+  ],
+  "currentResponse": "",
+  "isComplete": true
+}

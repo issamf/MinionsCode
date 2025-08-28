@@ -1,0 +1,13 @@
+{
+  "modelId": "ollama:magicoder:7b",
+  "scenarioId": "api-documentation",
+  "timestamp": "2025-08-28T00:26:31.915Z",
+  "conversation": [
+    {
+      "role": "user",
+      "message": "This React component is causing performance issues. Can you analyze it and suggest optimizations?"
+    }
+  ],
+  "currentResponse": "",
+  "isComplete": true
+}

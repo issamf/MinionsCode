@@ -1,0 +1,13 @@
+{
+  "modelId": "ollama:codellama:7b",
+  "scenarioId": "api-documentation",
+  "timestamp": "2025-08-28T12:09:35.386Z",
+  "conversation": [
+    {
+      "role": "user",
+      "message": "I need comprehensive API documentation for our user management endpoints. Can you analyze the code and create proper documentation?"
+    }
+  ],
+  "currentResponse": "",
+  "isComplete": true
+}

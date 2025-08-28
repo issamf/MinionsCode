@@ -269,13 +269,20 @@ export class EvaluationProgressTracker {
   }
 
   complete(): void {
-    this.progress.status = 'completed';
+    this.progress.status = 'generating-report';
     this.progress.globalProgress = 100;
-    this.progress.currentActivity = 'Evaluation completed! Generating final reports...';
+    this.progress.currentActivity = 'Generating final evaluation report...';
     this.progress.currentModel = null;
     this.progress.currentScenario = null;
     this.progress.canResume = false; // No need to resume after completion
     this.notifyCallbacks();
+    
+    // Complete the report generation after a brief delay to show the status
+    setTimeout(() => {
+      this.progress.status = 'completed';
+      this.progress.currentActivity = '✅ Evaluation completed! Reports saved in project directory.';
+      this.notifyCallbacks();
+    }, 3000);
   }
 
   error(error: string): void {

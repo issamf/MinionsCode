@@ -1,0 +1,13 @@
+{
+  "modelId": "ollama:magicoder:7b",
+  "scenarioId": "code-review-performance",
+  "timestamp": "2025-08-28T12:07:12.044Z",
+  "conversation": [
+    {
+      "role": "user",
+      "message": "This React component is causing performance issues. Can you analyze it and suggest optimizations?"
+    }
+  ],
+  "currentResponse": "❌ Timeout: Scenario timeout after 30000ms",
+  "isComplete": false
+}

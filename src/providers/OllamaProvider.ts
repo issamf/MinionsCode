@@ -135,9 +135,10 @@ export class OllamaProvider implements IAIProvider {
               const parsed = JSON.parse(line);
               
               if (parsed.message?.content) {
-                accumulatedContent += parsed.message.content;
+                const incrementalContent = parsed.message.content;
+                accumulatedContent += incrementalContent;
                 onChunk({
-                  content: accumulatedContent,
+                  content: incrementalContent, // Send only the incremental content, not the accumulated
                   done: false
                 });
               }

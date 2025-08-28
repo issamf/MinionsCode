@@ -1,0 +1,13 @@
+{
+  "modelId": "ollama:codellama:7b",
+  "scenarioId": "api-documentation",
+  "timestamp": "2025-08-28T11:09:25.523Z",
+  "conversation": [
+    {
+      "role": "user",
+      "message": "I need comprehensive API documentation for our user management endpoints. Can you analyze the code and create proper documentation?"
+    }
+  ],
+  "currentResponse": "❌ Timeout: Scenario timeout after 30000ms",
+  "isComplete": false
+}

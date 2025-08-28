@@ -1,0 +1,14 @@
+{
+  "modelId": "ollama:magicoder:7b",
+  "scenarioId": "code-review-security",
+  "timestamp": "2025-08-28T11:05:44.275Z",
+  "conversation": [
+    {
+      "role": "user",
+      "message": "Please review this authentication function for security issues:",
+      "context": "User provides code with SQL injection and XSS vulnerabilities"
+    }
+  ],
+  "currentResponse": "``````python```python\n```python\ndef```python\ndef authentic```python\ndef authenticate```python\ndef authenticate(",
+  "isComplete": false
+}

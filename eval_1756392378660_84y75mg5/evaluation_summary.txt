@@ -1,0 +1,13 @@
+=== AI Model Evaluation Report ===
+Generated: 8/28/2025, 5:52:54 PM
+
+SUMMARY:
+• Total Models Evaluated: 2
+• Successful: 1
+• Failed: 1
+• Skipped: 0
+• Success Rate: 50.0%
+
+MODEL DETAILS:
+• magicoder:7b: FAILED
+• dolphin-mistral:7b: SUCCESS

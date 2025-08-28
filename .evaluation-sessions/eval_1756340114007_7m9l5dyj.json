@@ -1,0 +1,307 @@
+{
+  "sessionId": "eval_1756340114007_7m9l5dyj",
+  "startTime": "2025-08-28T00:15:14.007Z",
+  "lastUpdateTime": "2025-08-28T00:16:17.939Z",
+  "status": "completed",
+  "selectedModels": [
+    {
+      "id": "ollama:magicoder:7b",
+      "name": "magicoder:7b",
+      "provider": "ollama",
+      "type": "local",
+      "specialization": "coding",
+      "size": "3.8 GB",
+      "estimatedSpeed": "fast"
+    },
+    {
+      "id": "ollama:dolphin-mistral:7b",
+      "name": "dolphin-mistral:7b",
+      "provider": "ollama",
+      "type": "local",
+      "specialization": "general",
+      "size": "4.1 GB",
+      "estimatedSpeed": "medium"
+    },
+    {
+      "id": "ollama:codellama:7b",
+      "name": "codellama:7b",
+      "provider": "ollama",
+      "type": "local",
+      "specialization": "coding",
+      "size": "3.8 GB",
+      "estimatedSpeed": "fast"
+    }
+  ],
+  "selectedScenarios": [
+    {
+      "id": "code-review-security",
+      "name": "Security Vulnerability Review",
+      "description": "Review JavaScript code with potential security vulnerabilities",
+      "agentType": "code_reviewer",
+      "difficulty": "hard",
+      "estimatedDuration": "5-8 minutes",
+      "conversation": [
+        {
+          "role": "user",
+          "message": "Please review this authentication function for security issues:",
+          "context": "User provides code with SQL injection and XSS vulnerabilities"
+        },
+        {
+          "role": "agent",
+          "message": "",
+          "expectedTaskTypes": [
+            "file_analysis",
+            "security_review"
+          ],
+          "expectedFileOperations": [
+            "CREATE_FILE"
+          ]
+        },
+        {
+          "role": "user",
+          "message": "Can you create a secure version of this function?"
+        },
+        {
+          "role": "agent",
+          "message": "",
+          "expectedTaskTypes": [
+            "file_operations"
+          ],
+          "expectedFileOperations": [
+            "CREATE_FILE"
+          ]
+        }
+      ],
+      "successCriteria": {
+        "taskExecution": [
+          "Creates analysis report file",
+          "Creates secure code implementation",
+          "Uses proper task syntax"
+        ],
+        "responseQuality": [
+          "Identifies specific security vulnerabilities",
+          "Explains why each issue is problematic",
+          "Provides concrete solutions"
+        ],
+        "domainExpertise": [
+          "Demonstrates knowledge of OWASP top 10",
+          "Suggests security best practices",
+          "Uses appropriate security terminology"
+        ]
+      },
+      "evaluationMetrics": [
+        "vulnerability_detection_accuracy",
+        "solution_quality",
+        "security_knowledge",
+        "task_execution_success",
+        "response_clarity"
+      ],
+      "context": {
+        "files": [
+          {
+            "name": "auth.js",
+            "content": "\nfunction authenticateUser(username, password) {\n  const query = \"SELECT * FROM users WHERE username='\" + username + \"' AND password='\" + password + \"'\";\n  const result = db.query(query);\n  if (result.length > 0) {\n    document.innerHTML = \"Welcome \" + username + \"!\";\n    return true;\n  }\n  return false;\n}\n              "
+          }
+        ],
+        "projectType": "web-application",
+        "requirements": [
+          "Identify security vulnerabilities",
+          "Provide secure alternatives"
+        ]
+      }
+    },
+    {
+      "id": "code-review-performance",
+      "name": "Performance Optimization Review",
+      "description": "Review React component with performance issues",
+      "agentType": "code_reviewer",
+      "difficulty": "medium",
+      "estimatedDuration": "4-6 minutes",
+      "conversation": [
+        {
+          "role": "user",
+          "message": "This React component is causing performance issues. Can you analyze it and suggest optimizations?"
+        },
+        {
+          "role": "agent",
+          "message": "",
+          "expectedTaskTypes": [
+            "performance_analysis"
+          ],
+          "expectedFileOperations": [
+            "CREATE_FILE"
+          ]
+        },
+        {
+          "role": "user",
+          "message": "Please implement the optimized version with your suggestions."
+        },
+        {
+          "role": "agent",
+          "message": "",
+          "expectedTaskTypes": [
+            "file_operations"
+          ],
+          "expectedFileOperations": [
+            "CREATE_FILE"
+          ]
+        }
+      ],
+      "successCriteria": {
+        "taskExecution": [
+          "Creates performance analysis report",
+          "Creates optimized component implementation"
+        ],
+        "responseQuality": [
+          "Identifies specific performance bottlenecks",
+          "Explains optimization strategies",
+          "Provides measurable improvements"
+        ],
+        "domainExpertise": [
+          "Demonstrates React performance knowledge",
+          "Suggests appropriate optimization techniques",
+          "Considers rendering patterns"
+        ]
+      },
+      "evaluationMetrics": [
+        "performance_issue_identification",
+        "optimization_effectiveness",
+        "react_expertise",
+        "implementation_quality"
+      ],
+      "context": {
+        "files": [
+          {
+            "name": "UserList.jsx",
+            "content": "\nimport React from 'react';\n\nconst UserList = ({ users, onUserClick }) => {\n  return (\n    <div>\n      {users.map(user => (\n        <div key={user.id} onClick={() => onUserClick(user)}>\n          <img src={user.avatar} alt={user.name} />\n          <div>\n            <h3>{user.name}</h3>\n            <p>{user.email}</p>\n            <div>{calculateUserScore(user)}</div>\n          </div>\n        </div>\n      ))}\n    </div>\n  );\n};\n\nfunction calculateUserScore(user) {\n  // Expensive calculation\n  let score = 0;\n  for (let i = 0; i < 10000; i++) {\n    score += Math.random() * user.posts.length;\n  }\n  return score;\n}\n\nexport default UserList;\n              "
+          }
+        ]
+      }
+    },
+    {
+      "id": "api-documentation",
+      "name": "API Documentation Generation",
+      "description": "Create comprehensive API documentation for REST endpoints",
+      "agentType": "documentation",
+      "difficulty": "medium",
+      "estimatedDuration": "6-10 minutes",
+      "conversation": [
+        {
+          "role": "user",
+          "message": "I need comprehensive API documentation for our user management endpoints. Can you analyze the code and create proper documentation?"
+        },
+        {
+          "role": "agent",
+          "message": "",
+          "expectedTaskTypes": [
+            "documentation_generation"
+          ],
+          "expectedFileOperations": [
+            "CREATE_FILE"
+          ]
+        },
+        {
+          "role": "user",
+          "message": "Great! Can you also create a separate file with usage examples and integrate it with the main documentation?"
+        },
+        {
+          "role": "agent",
+          "message": "",
+          "expectedTaskTypes": [
+            "file_operations"
+          ],
+          "expectedFileOperations": [
+            "CREATE_FILE",
+            "EDIT_FILE"
+          ]
+        }
+      ],
+      "successCriteria": {
+        "taskExecution": [
+          "Creates comprehensive API documentation",
+          "Creates usage examples file",
+          "Links documentation files appropriately"
+        ],
+        "responseQuality": [
+          "Documents all endpoints thoroughly",
+          "Includes request/response examples",
+          "Provides clear usage instructions"
+        ],
+        "domainExpertise": [
+          "Follows API documentation best practices",
+          "Uses appropriate documentation format",
+          "Includes error handling examples"
+        ]
+      },
+      "evaluationMetrics": [
+        "documentation_completeness",
+        "clarity_and_structure",
+        "technical_accuracy",
+        "usability"
+      ],
+      "context": {
+        "files": [
+          {
+            "name": "userController.js",
+            "content": "\nconst User = require('../models/User');\n\n/**\n * Get all users\n */\nexports.getAllUsers = async (req, res) => {\n  try {\n    const users = await User.find().select('-password');\n    res.json(users);\n  } catch (error) {\n    res.status(500).json({ error: error.message });\n  }\n};\n\n/**\n * Get user by ID\n */\nexports.getUserById = async (req, res) => {\n  try {\n    const user = await User.findById(req.params.id).select('-password');\n    if (!user) {\n      return res.status(404).json({ error: 'User not found' });\n    }\n    res.json(user);\n  } catch (error) {\n    res.status(500).json({ error: error.message });\n  }\n};\n\n/**\n * Create new user\n */\nexports.createUser = async (req, res) => {\n  try {\n    const { username, email, password } = req.body;\n    const user = new User({ username, email, password });\n    await user.save();\n    res.status(201).json({ id: user._id, username: user.username, email: user.email });\n  } catch (error) {\n    res.status(400).json({ error: error.message });\n  }\n};\n\n/**\n * Update user\n */\nexports.updateUser = async (req, res) => {\n  try {\n    const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true }).select('-password');\n    if (!user) {\n      return res.status(404).json({ error: 'User not found' });\n    }\n    res.json(user);\n  } catch (error) {\n    res.status(400).json({ error: error.message });\n  }\n};\n\n/**\n * Delete user\n */\nexports.deleteUser = async (req, res) => {\n  try {\n    const user = await User.findByIdAndDelete(req.params.id);\n    if (!user) {\n      return res.status(404).json({ error: 'User not found' });\n    }\n    res.json({ message: 'User deleted successfully' });\n  } catch (error) {\n    res.status(500).json({ error: error.message });\n  }\n};\n              "
+          }
+        ],
+        "projectType": "rest-api",
+        "requirements": [
+          "OpenAPI format",
+          "Include examples",
+          "Error documentation"
+        ]
+      }
+    }
+  ],
+  "configuration": {
+    "timeout": 30000,
+    "maxRetries": 3,
+    "retryDelay": 1000,
+    "includeOnlineModels": true,
+    "outputDirectory": "c:\\Projects\\apes-foundation\\CompanAI.local.v1",
+    "enableLivePreview": true,
+    "enableFailsafeMode": true
+  },
+  "totalModels": 3,
+  "completedModels": [
+    "ollama:magicoder:7b",
+    "ollama:dolphin-mistral:7b",
+    "ollama:codellama:7b"
+  ],
+  "currentModel": "ollama:codellama:7b",
+  "currentScenario": null,
+  "currentConversation": [],
+  "currentModelResponse": "",
+  "partialResults": [],
+  "errors": [
+    {
+      "modelId": "ollama:magicoder:7b",
+      "error": "Model skipped: Model not available or not responding",
+      "timestamp": "2025-08-28T00:15:34.219Z"
+    },
+    {
+      "modelId": "ollama:dolphin-mistral:7b",
+      "error": "Model skipped: Model not available or not responding",
+      "timestamp": "2025-08-28T00:15:55.602Z"
+    },
+    {
+      "modelId": "ollama:codellama:7b",
+      "error": "Model skipped: Model not available or not responding",
+      "timestamp": "2025-08-28T00:16:16.911Z"
+    }
+  ],
+  "elapsedTime": 0,
+  "modelTimings": {
+    "ollama:magicoder:7b": {
+      "start": "2025-08-28T00:15:14.015Z"
+    },
+    "ollama:dolphin-mistral:7b": {
+      "start": "2025-08-28T00:15:35.231Z"
+    },
+    "ollama:codellama:7b": {
+      "start": "2025-08-28T00:15:56.608Z"
+    }
+  }
+}

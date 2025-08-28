@@ -59,13 +59,15 @@ export interface LivePreviewUpdate {
 }
 
 export interface LivePreviewCallback {
-  (update: LivePreviewUpdate): void;
+  (update: LivePreviewUpdate | null): void;
 }
 
 export class EvaluationPersistenceService {
   private sessionDirectory: string;
   private currentSession: EvaluationSession | null = null;
   private livePreviewCallbacks: LivePreviewCallback[] = [];
+  private lastLivePreviewUpdate: number = 0;
+  private livePreviewThrottle: number = 250; // 250ms throttle to reduce lag
 
   constructor(baseOutputDirectory: string) {
     this.sessionDirectory = path.join(baseOutputDirectory, '.evaluation-sessions');
@@ -90,9 +92,40 @@ export class EvaluationPersistenceService {
     currentResponse: string = '',
     isStreaming: boolean = false
   ): void {
-    if (!this.currentSession || !this.currentSession.currentModel || !this.currentSession.currentScenario) {
+    const { debugLogger } = require('../utils/logger');
+    
+    if (!this.currentSession) {
+      debugLogger.log('❌ Live preview update skipped: No current session');
       return;
     }
+    
+    if (!this.currentSession.currentModel || !this.currentSession.currentScenario) {
+      debugLogger.log('❌ Live preview update skipped: Missing model or scenario', {
+        currentModel: this.currentSession.currentModel,
+        currentScenario: this.currentSession.currentScenario
+      });
+      return;
+    }
+
+    // Throttle updates to prevent lag (except for final updates when streaming stops)
+    const now = Date.now();
+    const timeSinceLastUpdate = now - this.lastLivePreviewUpdate;
+    
+    if (isStreaming && timeSinceLastUpdate < this.livePreviewThrottle) {
+      debugLogger.log('⏭️ Live preview update throttled', { timeSinceLastUpdate });
+      return;
+    }
+    
+    this.lastLivePreviewUpdate = now;
+    
+    debugLogger.log('🔄 Live preview update', {
+      conversationTurns: conversation.length,
+      currentResponseLength: currentResponse.length,
+      isStreaming,
+      modelId: this.currentSession.currentModel,
+      scenarioId: this.currentSession.currentScenario,
+      throttled: timeSinceLastUpdate < this.livePreviewThrottle
+    });
 
     // Update session data
     this.currentSession.currentConversation = conversation;
@@ -116,17 +149,25 @@ export class EvaluationPersistenceService {
       };
 
       // Notify all callbacks
-      this.livePreviewCallbacks.forEach(callback => {
+      debugLogger.log(`📡 Notifying ${this.livePreviewCallbacks.length} live preview callbacks`);
+      this.livePreviewCallbacks.forEach((callback, index) => {
         try {
           callback(update);
+          debugLogger.log(`✅ Live preview callback ${index} notified successfully`);
         } catch (error) {
+          debugLogger.log(`❌ Live preview callback ${index} error:`, error);
           console.error('Live preview callback error:', error);
         }
       });
     }
 
-    // Save conversation to file for persistence
-    this.saveConversationSnapshot(conversation, currentResponse);
+    // Only save conversation snapshots at meaningful boundaries (not streaming chunks)
+    if (!isStreaming) {
+      debugLogger.log('💾 Saving conversation snapshot (streaming complete)');
+      this.saveConversationSnapshot(conversation, currentResponse);
+    } else {
+      debugLogger.log('⏭️ Skipping snapshot save during streaming');
+    }
   }
 
   // Create a new evaluation session
@@ -247,12 +288,40 @@ export class EvaluationPersistenceService {
   ): void {
     if (!this.currentSession) return;
 
+    // Clear live preview when switching models/scenarios to prevent contamination
+    const modelChanged = this.currentSession.currentModel !== currentModel;
+    const scenarioChanged = this.currentSession.currentScenario !== currentScenario;
+    
+    if (modelChanged || scenarioChanged) {
+      this.clearLivePreview();
+    }
+
     this.currentSession.currentModel = currentModel;
     this.currentSession.currentScenario = currentScenario;
     this.currentSession.elapsedTime = elapsedTime;
     this.currentSession.lastUpdateTime = new Date();
 
     this.saveSession();
+  }
+
+  // Clear live preview data
+  private clearLivePreview(): void {
+    const { debugLogger } = require('../utils/logger');
+    debugLogger.log('🧹 Clearing live preview data for model/scenario switch');
+    
+    if (this.currentSession) {
+      this.currentSession.currentConversation = [];
+      this.currentSession.currentModelResponse = '';
+    }
+
+    // Notify all callbacks about the clear
+    this.livePreviewCallbacks.forEach(callback => {
+      try {
+        callback(null); // Send null to clear the preview
+      } catch (error) {
+        console.error('Error in live preview callback:', error);
+      }
+    });
   }
 
   // Mark model as started
@@ -377,9 +446,11 @@ export class EvaluationPersistenceService {
       this.ensureDirectoryExists(snapshotDir);
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const sanitizedModelId = this.sanitizeFilename(this.currentSession.currentModel || 'unknown');
+      const sanitizedScenarioId = this.sanitizeFilename(this.currentSession.currentScenario || 'unknown');
       const snapshotFile = path.join(
         snapshotDir,
-        `${this.currentSession.currentModel}_${this.currentSession.currentScenario}_${timestamp}.json`
+        `${sanitizedModelId}_${sanitizedScenarioId}_${timestamp}.json`
       );
 
       const snapshot = {
@@ -416,7 +487,8 @@ export class EvaluationPersistenceService {
   saveIntermediateResult(modelId: string, result: EvaluationResult): void {
     try {
       const sessionOutputDir = this.getSessionOutputDirectory();
-      const resultFile = path.join(sessionOutputDir, `${modelId}_result.json`);
+      const sanitizedModelId = this.sanitizeFilename(modelId);
+      const resultFile = path.join(sessionOutputDir, `${sanitizedModelId}_result.json`);
       fs.writeFileSync(resultFile, JSON.stringify(result, null, 2));
     } catch (error) {
       console.error(`Failed to save intermediate result for ${modelId}:`, error);
@@ -459,8 +531,10 @@ export class EvaluationPersistenceService {
       
       if (!fs.existsSync(snapshotDir)) return [];
 
+      const sanitizedModelId = this.sanitizeFilename(modelId);
+      const sanitizedScenarioId = this.sanitizeFilename(scenarioId);
       const snapshotFiles = fs.readdirSync(snapshotDir)
-        .filter(file => file.startsWith(`${modelId}_${scenarioId}_`) && file.endsWith('.json'))
+        .filter(file => file.startsWith(`${sanitizedModelId}_${sanitizedScenarioId}_`) && file.endsWith('.json'))
         .sort(); // Sort by timestamp
 
       if (snapshotFiles.length === 0) return [];
@@ -510,6 +584,11 @@ export class EvaluationPersistenceService {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
+  }
+
+  private sanitizeFilename(filename: string): string {
+    // Replace invalid characters for Windows/Linux filenames
+    return filename.replace(/[<>:"/\\|?*]/g, '_');
   }
 
   // Delete a specific session
